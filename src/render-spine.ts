@@ -41,6 +41,10 @@ export interface RenderSpineResult<TFormat extends OutputFormat = OutputFormat> 
 	width: number;
 }
 
+export function renderSpine<TFormat extends OutputFormat>(
+	options: RenderSpineOptions & { format: TFormat },
+): Promise<RenderSpineResult<TFormat>>;
+export function renderSpine(options: RenderSpineOptions): Promise<RenderSpineResult<"apng">>;
 export async function renderSpine(options: RenderSpineOptions): Promise<RenderSpineResult> {
 	const fps = options.fps ?? DEFAULT_FPS;
 

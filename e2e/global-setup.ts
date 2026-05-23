@@ -34,12 +34,17 @@ export default async function setup() {
 			throw new Error(`Could not find packed artifact in ${artifactDirectory}.`);
 		}
 
-		// The tarball's transitive deps (spine-canvas, commander, upng-js) already
+		// The tarball's transitive deps (spine-canvas, commander, sharp, upng-js) already
 		// live in the workspace store, so prefer it over the network — keeps setup
 		// working on offline/airgapped CI instead of failing here.
 		await execFileAsync(
 			"pnpm",
-			["add", "--prefer-offline", path.join(artifactDirectory, tarballName)],
+			[
+				"add",
+				"--allow-build=sharp",
+				"--prefer-offline",
+				path.join(artifactDirectory, tarballName),
+			],
 			{
 				cwd: consumerDirectory,
 			},

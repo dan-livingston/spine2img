@@ -6,6 +6,7 @@ import { expect, test } from "vite-plus/test";
 import {
 	decodeApng,
 	decodeApngFrames,
+	decodeWebpFrames,
 	fixtureSkeletonPath,
 	importPackageApi,
 	readInstalledPackageJson,
@@ -69,6 +70,42 @@ test("packed package API renders the fixture to APNG", async () => {
 			width: 97,
 		});
 		expect(packageApi.renderSpineToApng).toBeTypeOf("function");
+	} finally {
+		await rm(tempDirectory, { force: true, recursive: true });
+	}
+});
+
+test("packed package API renders the fixture to lossless animated WebP", async () => {
+	const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-api-webp-"));
+
+	try {
+		const outputPath = path.join(tempDirectory, "api.webp");
+		const packageApi = await importPackageApi();
+		const result = await packageApi.renderSpine({
+			format: "webp",
+			outputPath,
+			skeletonPath: fixtureSkeletonPath,
+		});
+		const decoded = await decodeWebpFrames(await readFile(outputPath));
+
+		expect(result).toMatchObject({
+			animationName: "pulse",
+			durationMs: 990,
+			fps: 30,
+			format: "webp",
+			frameCount: 30,
+			height: 64,
+			width: 97,
+		});
+		expect(decoded.format).toBe("webp");
+		expect(decoded.delay).toEqual(Array.from({ length: result.frameCount }, () => 33));
+		expect(decoded.frames).toHaveLength(result.frameCount);
+		expect(decoded.height).toBe(result.height);
+		expect(decoded.loop).toBe(0);
+		expect(decoded.width).toBe(result.width);
+		expect(
+			readPixel(decoded.frames[0], decoded.width, decoded.width - 1, decoded.height - 1),
+		).toEqual([0, 0, 0, 0]);
 	} finally {
 		await rm(tempDirectory, { force: true, recursive: true });
 	}

@@ -1,1 +1,1 @@
-export type OutputFormat = "apng";
+export type OutputFormat = "apng" | "webp";

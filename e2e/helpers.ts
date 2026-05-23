@@ -5,6 +5,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
+import sharp from "sharp";
 import UPNG from "upng-js";
 
 const execFileAsync = promisify(execFile);
@@ -55,6 +56,31 @@ export function decodeApngFrames(file: Uint8Array) {
 		frames: UPNG.toRGBA8(decoded).map((frame) => new Uint8Array(frame)),
 		height: decoded.height,
 		width: decoded.width,
+	};
+}
+
+export async function decodeWebpFrames(file: Uint8Array) {
+	const metadata = await sharp(file, { animated: true }).metadata();
+	const { data } = await sharp(file, { animated: true })
+		.raw()
+		.toBuffer({ resolveWithObject: true });
+	const width = metadata.width ?? 0;
+	const height = metadata.pageHeight ?? metadata.height ?? 0;
+	const frameCount = metadata.pages ?? 1;
+	const frameByteLength = width * height * 4;
+
+	return {
+		delay: metadata.delay ?? [],
+		format: metadata.format,
+		frames: Array.from({ length: frameCount }, (_, index) => {
+			const start = index * frameByteLength;
+			const end = start + frameByteLength;
+
+			return new Uint8Array(data.slice(start, end));
+		}),
+		height,
+		loop: metadata.loop ?? 0,
+		width,
 	};
 }
 
