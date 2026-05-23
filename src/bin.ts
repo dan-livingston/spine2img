@@ -2,8 +2,9 @@
 
 import { runCli } from "#/cli.ts";
 
+import { formatRenderErrorForCli } from "./lib/errors.ts";
+
 await runCli(process.argv).catch((error: unknown) => {
-	const message = error instanceof Error ? error.message : String(error);
-	console.error(message);
+	console.error(formatRenderErrorForCli(error));
 	process.exitCode = 1;
 });

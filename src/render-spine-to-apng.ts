@@ -1,3 +1,4 @@
+import { resolveSpineInputs } from "#/lib/resolve-spine-inputs.ts";
 import { toArrayBuffer } from "#/lib/to-array-buffer.ts";
 import {
 	AnimationState,
@@ -16,11 +17,13 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import UPNG from "upng-js";
 
+import { SpineInputResolutionError, type SpineInputAssetType } from "./lib/errors.ts";
+
 const DEFAULT_FPS = 30;
 
 export interface RenderSpineToApngOptions {
 	skeletonPath: string;
-	atlasPath: string;
+	atlasPath?: string;
 	outputPath: string;
 	fps?: number;
 }
@@ -68,8 +71,12 @@ export async function renderSpineToApng(
 		throw new Error(`fps must be a positive number. Received ${fps}.`);
 	}
 
-	const skeletonPath = path.resolve(options.skeletonPath);
-	const atlasPath = path.resolve(options.atlasPath);
+	const inputs = resolveSpineInputs({
+		atlasPath: options.atlasPath,
+		skeletonPath: options.skeletonPath,
+	});
+	const skeletonPath = inputs.skeletonPath;
+	const atlasPath = inputs.atlasPath;
 	const outputPath = path.resolve(options.outputPath);
 
 	const scene = await loadScene(skeletonPath, atlasPath);
@@ -107,10 +114,21 @@ export async function renderSpineToApng(
 }
 
 async function loadScene(skeletonPath: string, atlasPath: string): Promise<LoadedScene> {
+	// Read first, because it's cheap and fails fast.
+	const skeletonSource = await readTextAsset("skeleton", skeletonPath);
 	const atlas = await loadTextureAtlas(atlasPath);
 	const attachmentLoader = new AtlasAttachmentLoader(atlas);
 	const skeletonJson = new SkeletonJson(attachmentLoader);
-	const skeletonData = skeletonJson.readSkeletonData(await readFile(skeletonPath, "utf8"));
+
+	let skeletonData: Skeleton["data"];
+
+	try {
+		skeletonData = skeletonJson.readSkeletonData(skeletonSource);
+	} catch (error) {
+		atlas.dispose();
+		throw toSkeletonLoadError(skeletonPath, atlasPath, error);
+	}
+
 	const animation = skeletonData.animations.at(0);
 
 	if (!animation) {
@@ -127,15 +145,55 @@ async function loadScene(skeletonPath: string, atlasPath: string): Promise<Loade
 }
 
 async function loadTextureAtlas(atlasPath: string): Promise<TextureAtlas> {
-	const atlas = new TextureAtlas(await readFile(atlasPath, "utf8"));
+	let atlasSource: string;
+
+	try {
+		atlasSource = await readFile(atlasPath, "utf8");
+	} catch (error) {
+		throw toAssetReadError("atlas", atlasPath, error);
+	}
+
+	let atlas: TextureAtlas;
+
+	try {
+		atlas = new TextureAtlas(atlasSource);
+	} catch (error) {
+		throw new SpineInputResolutionError({
+			assetPath: atlasPath,
+			assetType: "atlas",
+			cause: error,
+			code: "invalid-asset",
+			message: `Invalid atlas input at ${atlasPath}.`,
+		});
+	}
+
 	const atlasDirectory = path.dirname(atlasPath);
 
 	for (const page of atlas.pages) {
-		const image = await loadImage(path.join(atlasDirectory, page.name));
+		const texturePath = path.join(atlasDirectory, page.name);
+		let image: Awaited<ReturnType<typeof loadImage>>;
+
+		try {
+			// Read the bytes ourselves so a missing/unreadable texture surfaces a
+			// Node errno we can classify.
+			image = await loadImage(await readFile(texturePath));
+		} catch (error) {
+			atlas.dispose();
+			throw toTextureLoadError(texturePath, atlasPath, error);
+		}
+
 		page.setTexture(new CanvasTexture(image));
 	}
 
 	return atlas;
+}
+
+async function readTextAsset(assetType: "skeleton", assetPath: string): Promise<string> {
+	try {
+		return await readFile(assetPath, "utf8");
+	} catch (error) {
+		throw toAssetReadError(assetType, assetPath, error);
+	}
 }
 
 function createSamples(durationSeconds: number, fps: number): Sample[] {
@@ -210,4 +268,123 @@ function poseSkeleton(scene: LoadedScene, timeSeconds: number): Skeleton {
 	skeleton.updateWorldTransform(Physics.update);
 
 	return skeleton;
+}
+
+function toAssetReadError(
+	assetType: Exclude<SpineInputAssetType, "bundle" | "texture">,
+	assetPath: string,
+	error: unknown,
+): SpineInputResolutionError {
+	if (error instanceof SpineInputResolutionError) {
+		return error;
+	}
+
+	if (isMissingFileError(error)) {
+		return new SpineInputResolutionError({
+			assetPath,
+			assetType,
+			cause: error,
+			code: "missing-asset",
+			message: `Missing ${assetType} input at ${assetPath}.`,
+		});
+	}
+
+	return new SpineInputResolutionError({
+		assetPath,
+		assetType,
+		cause: error,
+		code: "unreadable-asset",
+		message: `Could not read ${assetType} input at ${assetPath}.`,
+	});
+}
+
+function toTextureLoadError(
+	texturePath: string,
+	atlasPath: string,
+	error: unknown,
+): SpineInputResolutionError {
+	if (error instanceof SpineInputResolutionError) {
+		return error;
+	}
+
+	if (isMissingFileError(error)) {
+		return new SpineInputResolutionError({
+			assetPath: texturePath,
+			assetType: "texture",
+			cause: error,
+			code: "missing-asset",
+			message: `Missing texture input at ${texturePath}.`,
+			relatedPath: atlasPath,
+		});
+	}
+
+	if (isUnreadableFileError(error)) {
+		return new SpineInputResolutionError({
+			assetPath: texturePath,
+			assetType: "texture",
+			cause: error,
+			code: "unreadable-asset",
+			message: `Could not read texture input at ${texturePath}.`,
+			relatedPath: atlasPath,
+		});
+	}
+
+	return new SpineInputResolutionError({
+		assetPath: texturePath,
+		assetType: "texture",
+		cause: error,
+		code: "invalid-asset",
+		message: `Invalid texture input at ${texturePath}.`,
+		relatedPath: atlasPath,
+	});
+}
+
+function toSkeletonLoadError(
+	skeletonPath: string,
+	atlasPath: string,
+	error: unknown,
+): SpineInputResolutionError {
+	if (error instanceof SpineInputResolutionError) {
+		return error;
+	}
+
+	if (isAtlasRegionMismatchError(error)) {
+		return new SpineInputResolutionError({
+			assetPath: skeletonPath,
+			assetType: "bundle",
+			cause: error,
+			code: "inconsistent-assets",
+			message: `Skeleton ${skeletonPath} does not match atlas ${atlasPath}.`,
+			relatedPath: atlasPath,
+		});
+	}
+
+	// Everything else readSkeletonData throws is a problem with the skeleton itself, not
+	// a mismatch against the atlas.
+	return new SpineInputResolutionError({
+		assetPath: skeletonPath,
+		assetType: "skeleton",
+		cause: error,
+		code: "invalid-asset",
+		message: `Invalid skeleton input at ${skeletonPath}.`,
+	});
+}
+
+// AtlasAttachmentLoader throws this exact message — and it is the only
+// readSkeletonData failure that genuinely means the skeleton and atlas are
+// mismatched rather than the skeleton being structurally invalid.
+function isAtlasRegionMismatchError(error: unknown): boolean {
+	return error instanceof Error && error.message.includes("Region not found in atlas");
+}
+
+function isMissingFileError(error: unknown): error is NodeJS.ErrnoException {
+	return isNodeErrorWithCode(error, "ENOENT");
+}
+
+function isUnreadableFileError(error: unknown): error is NodeJS.ErrnoException {
+	return isNodeErrorWithCode(error, "EACCES") || isNodeErrorWithCode(error, "EPERM");
+}
+
+function isNodeErrorWithCode(error: unknown, code: string): error is NodeJS.ErrnoException {
+	return error instanceof Error && "code" in error && error.code === code;
 }

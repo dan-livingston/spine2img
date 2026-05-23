@@ -9,14 +9,17 @@ export function createCli(): Command {
 		.description("Render Spine JSON animations to APNG.")
 		.addCommand(
 			new Command("render")
-				.description("Render a Spine skeleton and atlas to an APNG file.")
+				.description("Render a Spine skeleton to an APNG file.")
 				.argument("<skeleton>", "path to the Spine JSON skeleton")
-				.argument("<atlas>", "path to the Spine atlas")
 				.argument("<output>", "path for the output APNG file")
+				.option(
+					"--atlas <atlas>",
+					"path to the Spine atlas (defaults beside the skeleton; relative paths resolve from the current directory)",
+				)
 				.option("--fps <fps>", "frames per second", Number)
-				.action(async (skeleton, atlas, output, options) => {
+				.action(async (skeleton, output, options) => {
 					const result = await renderSpineToApng({
-						atlasPath: atlas,
+						atlasPath: options.atlas,
 						fps: options.fps,
 						outputPath: output,
 						skeletonPath: skeleton,
