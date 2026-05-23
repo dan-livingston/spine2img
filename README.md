@@ -25,7 +25,7 @@ console.log(result.format); // "apng"
 console.log(result.frameCount); // structured metadata for automation
 ```
 
-When `format` is omitted, the library currently defaults to `"apng"`. When `fps` is omitted, rendering defaults to `30`. When `width` and `height` are omitted, the output auto-fits the animation bounds. Backgrounds stay transparent unless you pass a hex `backgroundColor`. Existing output files are protected by default; pass `overwrite: true` to replace them intentionally.
+When `format` is omitted, the library infers it from `outputPath`: `.webp` writes WebP, while `.png` and `.apng` write APNG. Unrecognized extensions still fall back to `"apng"`. When `fps` is omitted, rendering defaults to `30`. When `width` and `height` are omitted, the output auto-fits the animation bounds. Backgrounds stay transparent unless you pass a hex `backgroundColor`. Existing output files are protected by default; pass `overwrite: true` to replace them intentionally.
 
 Explicit `width`/`height` anchor the animation at the top-left of the canvas: a larger viewport pads the right and bottom, and a smaller viewport crops the right and bottom. The animation is not scaled or centered to fit.
 
@@ -35,6 +35,7 @@ Explicit `width`/`height` anchor the animation at the top-left of the canvas: a 
 spine2img render fixtures/tracer-bullet/box.json out/box.apng \
   --atlas fixtures/tracer-bullet/box.atlas \
   --animation pulse \
+  --format apng \
   --overwrite \
   --fps 24 \
   --width 120 \
@@ -42,7 +43,7 @@ spine2img render fixtures/tracer-bullet/box.json out/box.apng \
   --background '#ffffff'
 ```
 
-For automation, ask the CLI for the same structured result metadata as JSON:
+The CLI also infers the format from the output extension, and `--format` overrides that inference. For automation, ask the CLI for the same structured result metadata as JSON:
 
 ```bash
 spine2img render fixtures/tracer-bullet/box.json out/box.apng --json

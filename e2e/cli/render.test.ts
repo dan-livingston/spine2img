@@ -6,6 +6,7 @@ import { expect, test } from "vite-plus/test";
 import {
 	decodeApng,
 	decodeApngFrames,
+	decodeWebpFrames,
 	fixtureSkeletonPath,
 	readPixel,
 	runCli,
@@ -68,6 +69,46 @@ test("packed package CLI can print structured result metadata as JSON", async ()
 		expect(decoded.frameCount).toBe(result.frameCount);
 		expect(decoded.height).toBe(result.height);
 		expect(decoded.width).toBe(result.width);
+	} finally {
+		await rm(tempDirectory, { force: true, recursive: true });
+	}
+});
+
+test("packed package CLI infers WebP from a .webp output path", async () => {
+	const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-cli-webp-"));
+
+	try {
+		const outputPath = path.join(tempDirectory, "cli.webp");
+		const { stdout } = await runCli(["render", fixtureSkeletonPath, outputPath, "--json"]);
+		const result = JSON.parse(stdout) as { format: string; frameCount: number };
+		const decoded = await decodeWebpFrames(await readFile(outputPath));
+
+		expect(result.format).toBe("webp");
+		expect(decoded.format).toBe("webp");
+		expect(decoded.frames).toHaveLength(result.frameCount);
+	} finally {
+		await rm(tempDirectory, { force: true, recursive: true });
+	}
+});
+
+test("packed package CLI lets --format override extension inference", async () => {
+	const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-cli-format-override-"));
+
+	try {
+		const outputPath = path.join(tempDirectory, "cli-override.webp");
+		const { stdout } = await runCli([
+			"render",
+			fixtureSkeletonPath,
+			outputPath,
+			"--format",
+			"apng",
+			"--json",
+		]);
+		const result = JSON.parse(stdout) as { format: string; frameCount: number };
+		const decoded = decodeApng(await readFile(outputPath));
+
+		expect(result.format).toBe("apng");
+		expect(decoded.frameCount).toBe(result.frameCount);
 	} finally {
 		await rm(tempDirectory, { force: true, recursive: true });
 	}

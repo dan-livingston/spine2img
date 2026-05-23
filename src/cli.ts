@@ -1,22 +1,35 @@
 import { renderSpine } from "#/render-spine.ts";
-import { Command } from "commander";
+import { Command, InvalidArgumentError } from "commander";
+
+function parseOutputFormat(value: string): "apng" | "webp" {
+	if (value === "apng" || value === "webp") {
+		return value;
+	}
+
+	throw new InvalidArgumentError(`format must be "apng" or "webp". Received ${value}.`);
+}
 
 export function createCli(): Command {
 	const program = new Command();
 
 	program
 		.name("spine2img")
-		.description("Render Spine JSON animations to APNG.")
+		.description("Render Spine JSON animations to APNG or WebP.")
 		.addCommand(
 			new Command("render")
-				.description("Render a Spine skeleton to an APNG file.")
+				.description("Render a Spine skeleton to an animated image file.")
 				.argument("<skeleton>", "path to the Spine JSON skeleton")
-				.argument("<output>", "path for the output APNG file")
+				.argument("<output>", "path for the output image file")
 				.option(
 					"--atlas <atlas>",
 					"path to the Spine atlas (defaults beside the skeleton; relative paths resolve from the current directory)",
 				)
 				.option("--animation <animation>", "exact animation name to render")
+				.option(
+					"--format <format>",
+					"output format override (otherwise inferred from the output extension)",
+					parseOutputFormat,
+				)
 				.option("--width <width>", "output width in pixels", Number)
 				.option("--height <height>", "output height in pixels", Number)
 				.option(
@@ -36,6 +49,7 @@ export function createCli(): Command {
 						skinName: options.skin,
 						backgroundColor: options.background,
 						fps: options.fps,
+						format: options.format,
 						height: options.height,
 						overwrite: options.overwrite,
 						width: options.width,

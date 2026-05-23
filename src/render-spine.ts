@@ -5,6 +5,7 @@ import { canvasSpineRenderer } from "#/lib/canvas-spine-renderer.ts";
 import { OutputCollisionError } from "#/lib/errors.ts";
 import { isMissingFileError, isNodeErrorWithCode } from "#/lib/node-errors.ts";
 import { resolveAnimatedImageEncoder } from "#/lib/resolve-animated-image-encoder.ts";
+import { resolveFormat, type ResolvedOutputFormat } from "#/lib/resolve-format.ts";
 import { resolveSpineInputs } from "#/lib/resolve-spine-inputs.ts";
 import { access, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -13,14 +14,14 @@ const DEFAULT_FPS = 30;
 
 export type { OutputFormat };
 
-export interface RenderSpineOptions {
+export interface RenderSpineOptions<TOutputPath extends string = string> {
 	animationName?: string;
 	atlasPath?: string;
 	backgroundColor?: string;
 	fps?: number;
 	format?: OutputFormat;
 	height?: number;
-	outputPath: string;
+	outputPath: TOutputPath;
 	overwrite?: boolean;
 	skeletonPath: string;
 	skinName?: string;
@@ -44,7 +45,9 @@ export interface RenderSpineResult<TFormat extends OutputFormat = OutputFormat> 
 export function renderSpine<TFormat extends OutputFormat>(
 	options: RenderSpineOptions & { format: TFormat },
 ): Promise<RenderSpineResult<TFormat>>;
-export function renderSpine(options: RenderSpineOptions): Promise<RenderSpineResult<"apng">>;
+export function renderSpine<TOutputPath extends string>(
+	options: RenderSpineOptions<TOutputPath>,
+): Promise<RenderSpineResult<ResolvedOutputFormat<TOutputPath>>>;
 export async function renderSpine(options: RenderSpineOptions): Promise<RenderSpineResult> {
 	const fps = options.fps ?? DEFAULT_FPS;
 
@@ -55,7 +58,10 @@ export async function renderSpine(options: RenderSpineOptions): Promise<RenderSp
 	const backgroundColor = normalizeBackgroundColor(options.backgroundColor);
 	const explicitWidth = validateExplicitDimension("width", options.width);
 	const explicitHeight = validateExplicitDimension("height", options.height);
-	const format = options.format ?? "apng";
+	const format = resolveFormat({
+		format: options.format,
+		outputPath: options.outputPath,
+	});
 	const encoder = resolveAnimatedImageEncoder(format);
 	const inputs = resolveSpineInputs({
 		atlasPath: options.atlasPath,

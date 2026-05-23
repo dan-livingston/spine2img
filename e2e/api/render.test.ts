@@ -111,6 +111,73 @@ test("packed package API renders the fixture to lossless animated WebP", async (
 	}
 });
 
+test("packed package API infers WebP from a .webp output path", async () => {
+	const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-api-infer-webp-"));
+
+	try {
+		const outputPath = path.join(tempDirectory, "api-inferred.webp");
+		const packageApi = await importPackageApi();
+		const result = await packageApi.renderSpine({
+			outputPath,
+			skeletonPath: fixtureSkeletonPath,
+		});
+		const decoded = await decodeWebpFrames(await readFile(outputPath));
+
+		expect(result.format).toBe("webp");
+		expect(decoded.format).toBe("webp");
+		expect(decoded.frames).toHaveLength(result.frameCount);
+	} finally {
+		await rm(tempDirectory, { force: true, recursive: true });
+	}
+});
+
+test("packed package API infers APNG from .png and .apng output paths", async () => {
+	const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-api-infer-apng-"));
+
+	try {
+		const packageApi = await importPackageApi();
+		const pngOutputPath = path.join(tempDirectory, "api-inferred.png");
+		const apngOutputPath = path.join(tempDirectory, "api-inferred.apng");
+		const pngResult = await packageApi.renderSpine({
+			outputPath: pngOutputPath,
+			skeletonPath: fixtureSkeletonPath,
+		});
+		const apngResult = await packageApi.renderSpine({
+			outputPath: apngOutputPath,
+			skeletonPath: fixtureSkeletonPath,
+		});
+		const pngDecoded = decodeApng(await readFile(pngOutputPath));
+		const apngDecoded = decodeApng(await readFile(apngOutputPath));
+
+		expect(pngResult.format).toBe("apng");
+		expect(apngResult.format).toBe("apng");
+		expect(pngDecoded.frameCount).toBe(pngResult.frameCount);
+		expect(apngDecoded.frameCount).toBe(apngResult.frameCount);
+	} finally {
+		await rm(tempDirectory, { force: true, recursive: true });
+	}
+});
+
+test("packed package API lets an explicit format override a contradictory extension", async () => {
+	const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-api-format-override-"));
+
+	try {
+		const outputPath = path.join(tempDirectory, "api-override.apng");
+		const packageApi = await importPackageApi();
+		const result = await packageApi.renderSpine({
+			format: "webp",
+			outputPath,
+			skeletonPath: fixtureSkeletonPath,
+		});
+		const decoded = await decodeWebpFrames(await readFile(outputPath));
+
+		expect(result.format).toBe("webp");
+		expect(decoded.format).toBe("webp");
+	} finally {
+		await rm(tempDirectory, { force: true, recursive: true });
+	}
+});
+
 test("packed package API applies explicit fps to sampling and metadata", async () => {
 	const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-api-fps-"));
 
