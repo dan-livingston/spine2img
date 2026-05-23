@@ -5,7 +5,7 @@ Render a Spine JSON animation to an APNG file from Node.js or the command line.
 ## API
 
 ```ts
-import { renderSpine } from "spine2img";
+import { renderSpine, renderSpineToWebp } from "spine2img";
 
 const result = await renderSpine({
 	animationName: "pulse",
@@ -23,6 +23,18 @@ const result = await renderSpine({
 console.log(result.fps); // 24
 console.log(result.format); // "apng"
 console.log(result.frameCount); // structured metadata for automation
+console.log(result.lossless); // true
+
+const webpResult = await renderSpineToWebp({
+	skeletonPath: "fixtures/tracer-bullet/box.json",
+	atlasPath: "fixtures/tracer-bullet/box.atlas",
+	outputPath: "out/box.webp",
+	lossless: false,
+	quality: 80,
+});
+
+console.log(webpResult.format); // "webp"
+console.log(webpResult.quality); // 80 when lossy
 ```
 
 When `format` is omitted, the library infers it from `outputPath`: `.webp` writes WebP, while `.png` and `.apng` write APNG. Unrecognized extensions still fall back to `"apng"`. When `fps` is omitted, rendering defaults to `30`. When `width` and `height` are omitted, the output auto-fits the animation bounds. Backgrounds stay transparent unless you pass a hex `backgroundColor`. Existing output files are protected by default; pass `overwrite: true` to replace them intentionally.
@@ -50,7 +62,13 @@ spine2img render fixtures/tracer-bullet/box.json out/box.apng --json
 ```
 
 ```json
-{ "format": "apng", "outputPath": "out/box.apng", "animationName": "pulse", "fps": 30 }
+{
+	"format": "apng",
+	"outputPath": "out/box.apng",
+	"animationName": "pulse",
+	"fps": 30,
+	"lossless": true
+}
 ```
 
 Without `--overwrite`, the CLI fails if `out/box.apng` already exists.

@@ -20,6 +20,7 @@ export {
 	type OutputFormat,
 	renderSpine,
 	renderSpineToApng,
+	renderSpineToWebp,
 	type RenderSpineOptions,
 	type RenderSpineResult,
 } from "#/render-spine.ts";

@@ -1,3 +1,4 @@
+import type { EncodingMetadata } from "#/lib/encoding-metadata.ts";
 import type { OutputFormat } from "#/lib/output-format.ts";
 
 import { RenderOptionValidationError } from "#/lib/errors.ts";
@@ -10,19 +11,19 @@ export interface ResolveEncodeOptionsInput {
 	quality?: number;
 }
 
-export interface ResolvedEncodeOptions {
-	lossless: boolean;
-	quality?: number;
-}
+export type ResolvedEncodeOptions = EncodingMetadata;
 
 export function resolveEncodeOptions(options: ResolveEncodeOptionsInput): ResolvedEncodeOptions {
 	const lossless = options.lossless ?? true;
 	const qualityProvided = options.quality !== undefined;
 
-	// Check format compatibility before validating the quality range: if quality
-	// isn't supported by the target at all, that's the more fundamental mistake to
-	// report, and a range message would just send the user fixing the wrong thing.
-	if (options.format === "apng") {
+	// WebP is the only format that supports lossy output, so reject lossy/quality
+	// for every other format here. Whitelisting WebP (rather than singling out
+	// APNG) fails safe: a future lossless-only format lands in this branch instead
+	// of silently inheriting the lossy variant. Check format compatibility before
+	// validating the quality range — an unsupported target is the more fundamental
+	// mistake, and a range message would just send the user fixing the wrong thing.
+	if (options.format !== "webp") {
 		if (!lossless) {
 			throw new RenderOptionValidationError({
 				code: "unsupported-lossy-output",

@@ -1,3 +1,4 @@
+import type { EncodingMetadata, LosslessEncoding } from "#/lib/encoding-metadata.ts";
 import type { OutputFormat } from "#/lib/output-format.ts";
 import type { Sample, Viewport } from "#/lib/renderer-backend.ts";
 
@@ -31,7 +32,7 @@ export interface RenderSpineOptions<TOutputPath extends string = string> {
 	width?: number;
 }
 
-export interface RenderSpineResult<TFormat extends OutputFormat = OutputFormat> {
+interface RenderSpineResultBase<TFormat extends OutputFormat> {
 	animationName: string;
 	atlasPath: string;
 	durationMs: number;
@@ -44,6 +45,13 @@ export interface RenderSpineResult<TFormat extends OutputFormat = OutputFormat> 
 	skinName?: string;
 	width: number;
 }
+
+type RenderSpineEncodingResult<TFormat extends OutputFormat> = TFormat extends "webp"
+	? EncodingMetadata
+	: LosslessEncoding;
+
+export type RenderSpineResult<TFormat extends OutputFormat = OutputFormat> =
+	RenderSpineResultBase<TFormat> & RenderSpineEncodingResult<TFormat>;
 
 export function renderSpine<TFormat extends OutputFormat>(
 	options: RenderSpineOptions & { format: TFormat },
@@ -122,6 +130,7 @@ export async function renderSpine(options: RenderSpineOptions): Promise<RenderSp
 			skeletonPath,
 			skinName: scene.skinName,
 			width: viewport.width,
+			...encodeOptions,
 		};
 	} finally {
 		canvasSpineRenderer.disposeScene(scene);
@@ -132,6 +141,12 @@ export function renderSpineToApng(
 	options: Omit<RenderSpineOptions, "format">,
 ): Promise<RenderSpineResult<"apng">> {
 	return renderSpine({ ...options, format: "apng" });
+}
+
+export function renderSpineToWebp(
+	options: Omit<RenderSpineOptions, "format">,
+): Promise<RenderSpineResult<"webp">> {
+	return renderSpine({ ...options, format: "webp" });
 }
 
 async function assertOutputWritable(outputPath: string, overwrite: boolean): Promise<void> {

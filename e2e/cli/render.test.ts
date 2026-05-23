@@ -52,7 +52,9 @@ test("packed package CLI can print structured result metadata as JSON", async ()
 			frameCount: number;
 			format: string;
 			height: number;
+			lossless: boolean;
 			outputPath: string;
+			quality?: number;
 			width: number;
 		};
 		const decoded = decodeApng(await readFile(outputPath));
@@ -64,9 +66,11 @@ test("packed package CLI can print structured result metadata as JSON", async ()
 			format: "apng",
 			frameCount: 12,
 			height: 64,
+			lossless: true,
 			outputPath,
 			width: 97,
 		});
+		expect(result).not.toHaveProperty("quality");
 		expect(decoded.frameCount).toBe(result.frameCount);
 		expect(decoded.height).toBe(result.height);
 		expect(decoded.width).toBe(result.width);
@@ -127,6 +131,38 @@ test("packed package CLI maps lossy WebP flags through to the encoder", async ()
 		expect(lowQualityBytes.byteLength).toBeLessThan(highQualityBytes.byteLength);
 		expect(decoded.format).toBe("webp");
 		expect(decoded.frames).toHaveLength(30);
+	} finally {
+		await rm(tempDirectory, { force: true, recursive: true });
+	}
+});
+
+test("packed package CLI includes effective lossy WebP metadata in JSON output", async () => {
+	const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-cli-webp-json-"));
+
+	try {
+		const outputPath = path.join(tempDirectory, "cli-lossy.webp");
+		const { stdout } = await runCli([
+			"render",
+			fixtureSkeletonPath,
+			outputPath,
+			"--no-lossless",
+			"--quality",
+			"27",
+			"--json",
+		]);
+		const result = JSON.parse(stdout) as {
+			format: string;
+			lossless: boolean;
+			outputPath: string;
+			quality?: number;
+		};
+
+		expect(result).toMatchObject({
+			format: "webp",
+			lossless: false,
+			outputPath,
+			quality: 27,
+		});
 	} finally {
 		await rm(tempDirectory, { force: true, recursive: true });
 	}
