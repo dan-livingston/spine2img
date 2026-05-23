@@ -10,6 +10,8 @@ export type SpineSelectionType = "animation" | "skin";
 
 export type SpineSelectionErrorCode = "missing-selection";
 
+export type OutputCollisionErrorCode = "existing-output";
+
 export interface SpineInputResolutionErrorOptions {
 	assetPath: string;
 	assetType: SpineInputAssetType;
@@ -27,6 +29,13 @@ export interface SpineSelectionErrorOptions {
 	requestedName: string;
 	selectionType: SpineSelectionType;
 	skeletonPath: string;
+}
+
+export interface OutputCollisionErrorOptions {
+	cause?: unknown;
+	code: OutputCollisionErrorCode;
+	message: string;
+	outputPath: string;
 }
 
 export class SpineInputResolutionError extends Error {
@@ -65,7 +74,24 @@ export class SpineSelectionError extends Error {
 	}
 }
 
+export class OutputCollisionError extends Error {
+	declare readonly cause: unknown;
+	readonly code: OutputCollisionErrorCode;
+	readonly outputPath: string;
+
+	constructor(options: OutputCollisionErrorOptions) {
+		super(options.message, { cause: options.cause });
+		this.name = "OutputCollisionError";
+		this.code = options.code;
+		this.outputPath = options.outputPath;
+	}
+}
+
 export function formatRenderErrorForCli(error: unknown): string {
+	if (error instanceof OutputCollisionError) {
+		return `Output already exists: ${error.outputPath}. Pass --overwrite to replace it.`;
+	}
+
 	if (error instanceof SpineInputResolutionError) {
 		switch (error.code) {
 			case "missing-asset":

@@ -1,6 +1,8 @@
 export {
+	OutputCollisionError,
 	SpineInputResolutionError,
 	SpineSelectionError,
+	type OutputCollisionErrorCode,
 	type SpineInputAssetType,
 	type SpineInputResolutionErrorCode,
 	type SpineSelectionErrorCode,

@@ -25,6 +25,7 @@ export function createCli(): Command {
 				)
 				.option("--fps <fps>", "frames per second", Number)
 				.option("--json", "print structured result metadata as JSON")
+				.option("--overwrite", "overwrite an existing output file")
 				.option("--skin <skin>", "exact skin name to apply")
 				.action(async (skeleton, output, options) => {
 					const result = await renderSpineToApng({
@@ -36,6 +37,7 @@ export function createCli(): Command {
 						backgroundColor: options.background,
 						fps: options.fps,
 						height: options.height,
+						overwrite: options.overwrite,
 						width: options.width,
 					});
 

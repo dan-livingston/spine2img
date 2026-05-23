@@ -109,6 +109,53 @@ test("built package API can override viewport size while keeping transparency by
 	}
 });
 
+test("built package API protects existing outputs unless overwrite is enabled", async () => {
+	const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-api-overwrite-"));
+
+	try {
+		const outputPath = path.join(tempDirectory, "api-overwrite.apng");
+		const originalBytes = Buffer.from("do-not-clobber");
+		const packageApi = await import(
+			pathToFileURL(path.join(rootDirectory, "dist", "index.mjs")).href
+		);
+		await writeFile(outputPath, originalBytes);
+
+		let error: unknown;
+
+		try {
+			await packageApi.renderSpineToApng({
+				outputPath,
+				skeletonPath: fixtureSkeletonPath,
+			});
+		} catch (caught) {
+			error = caught;
+		}
+
+		expect(error).toBeInstanceOf(packageApi.OutputCollisionError);
+		expect(error).toMatchObject({
+			code: "existing-output",
+			outputPath,
+		});
+		expect(await readFile(outputPath)).toEqual(originalBytes);
+
+		const result = await packageApi.renderSpineToApng({
+			outputPath,
+			overwrite: true,
+			skeletonPath: fixtureSkeletonPath,
+		});
+		const decoded = decodeApng(await readFile(outputPath));
+
+		expect(result.outputPath).toBe(outputPath);
+		expect(decoded).toEqual({
+			frameCount: 30,
+			height: 64,
+			width: 97,
+		});
+	} finally {
+		await rm(tempDirectory, { force: true, recursive: true });
+	}
+});
+
 test("built package API validates viewport options before loading the scene", async () => {
 	const packageApi = await import(
 		pathToFileURL(path.join(rootDirectory, "dist", "index.mjs")).href
@@ -306,6 +353,64 @@ test("built package CLI can apply explicit size and background color", async () 
 		expect(
 			readPixel(decoded.frames[0], decoded.width, decoded.width - 1, decoded.height - 1),
 		).toEqual([51, 102, 153, 255]);
+	} finally {
+		await rm(tempDirectory, { force: true, recursive: true });
+	}
+});
+
+test("built package CLI protects existing outputs unless --overwrite is passed", async () => {
+	const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-cli-overwrite-"));
+
+	try {
+		const outputPath = path.join(tempDirectory, "cli-overwrite.apng");
+		const originalBytes = Buffer.from("do-not-clobber");
+		await writeFile(outputPath, originalBytes);
+
+		let error: unknown;
+
+		try {
+			await execFileAsync(
+				"node",
+				[
+					path.join(rootDirectory, "dist", "bin.mjs"),
+					"render",
+					fixtureSkeletonPath,
+					outputPath,
+				],
+				{
+					cwd: rootDirectory,
+				},
+			);
+		} catch (caught) {
+			error = caught;
+		}
+
+		expect(error).toBeInstanceOf(Error);
+		expect((error as { stderr?: string }).stderr).toContain("Output already exists:");
+		expect((error as { stderr?: string }).stderr).toContain("Pass --overwrite to replace it.");
+		expect(await readFile(outputPath)).toEqual(originalBytes);
+
+		const { stdout } = await execFileAsync(
+			"node",
+			[
+				path.join(rootDirectory, "dist", "bin.mjs"),
+				"render",
+				fixtureSkeletonPath,
+				outputPath,
+				"--overwrite",
+			],
+			{
+				cwd: rootDirectory,
+			},
+		);
+		const decoded = decodeApng(await readFile(outputPath));
+
+		expect(stdout).toContain("Rendered pulse");
+		expect(decoded).toEqual({
+			frameCount: 30,
+			height: 64,
+			width: 97,
+		});
 	} finally {
 		await rm(tempDirectory, { force: true, recursive: true });
 	}

@@ -13,11 +13,12 @@ import {
 	Vector2,
 } from "@esotericsoftware/spine-canvas";
 import { createCanvas, loadImage } from "@napi-rs/canvas";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import UPNG from "upng-js";
 
 import {
+	OutputCollisionError,
 	SpineInputResolutionError,
 	SpineSelectionError,
 	type SpineInputAssetType,
@@ -31,6 +32,7 @@ export interface RenderSpineToApngOptions {
 	skeletonPath: string;
 	atlasPath?: string;
 	outputPath: string;
+	overwrite?: boolean;
 	fps?: number;
 	width?: number;
 	height?: number;
@@ -100,6 +102,9 @@ export async function renderSpineToApng(
 	const skeletonPath = inputs.skeletonPath;
 	const atlasPath = inputs.atlasPath;
 	const outputPath = path.resolve(options.outputPath);
+	const overwrite = options.overwrite ?? false;
+
+	await assertOutputWritable(outputPath, overwrite);
 
 	const scene = await loadScene(skeletonPath, atlasPath, {
 		animationName: options.animationName,
@@ -124,7 +129,7 @@ export async function renderSpineToApng(
 		);
 
 		await mkdir(path.dirname(outputPath), { recursive: true });
-		await writeFile(outputPath, Buffer.from(encoded));
+		await writeOutputFile(outputPath, Buffer.from(encoded), overwrite);
 
 		return {
 			animationName: scene.animationName,
@@ -141,6 +146,49 @@ export async function renderSpineToApng(
 		};
 	} finally {
 		scene.atlas.dispose();
+	}
+}
+
+async function assertOutputWritable(outputPath: string, overwrite: boolean): Promise<void> {
+	if (overwrite) {
+		return;
+	}
+
+	try {
+		await access(outputPath);
+	} catch (error) {
+		if (isMissingFileError(error)) {
+			return;
+		}
+
+		throw error;
+	}
+
+	throw new OutputCollisionError({
+		code: "existing-output",
+		message: `Output already exists at ${outputPath}.`,
+		outputPath,
+	});
+}
+
+async function writeOutputFile(
+	outputPath: string,
+	encoded: Uint8Array,
+	overwrite: boolean,
+): Promise<void> {
+	try {
+		await writeFile(outputPath, encoded, { flag: overwrite ? "w" : "wx" });
+	} catch (error) {
+		if (isNodeErrorWithCode(error, "EEXIST")) {
+			throw new OutputCollisionError({
+				cause: error,
+				code: "existing-output",
+				message: `Output already exists at ${outputPath}.`,
+				outputPath,
+			});
+		}
+
+		throw error;
 	}
 }
 
