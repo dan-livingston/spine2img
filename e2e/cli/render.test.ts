@@ -4,6 +4,7 @@ import path from "node:path";
 import { expect, test } from "vite-plus/test";
 
 import {
+	createNoisyFixture,
 	decodeApng,
 	decodeApngFrames,
 	decodeWebpFrames,
@@ -86,6 +87,46 @@ test("packed package CLI infers WebP from a .webp output path", async () => {
 		expect(result.format).toBe("webp");
 		expect(decoded.format).toBe("webp");
 		expect(decoded.frames).toHaveLength(result.frameCount);
+	} finally {
+		await rm(tempDirectory, { force: true, recursive: true });
+	}
+});
+
+test("packed package CLI maps lossy WebP flags through to the encoder", async () => {
+	const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-cli-lossy-webp-"));
+
+	try {
+		const fixtureCopyDirectory = await createNoisyFixture(tempDirectory);
+		const skeletonPath = path.join(fixtureCopyDirectory, "box.json");
+		const losslessOutputPath = path.join(tempDirectory, "lossless.webp");
+		const lowQualityOutputPath = path.join(tempDirectory, "quality-20.webp");
+		const highQualityOutputPath = path.join(tempDirectory, "quality-90.webp");
+		await runCli(["render", skeletonPath, losslessOutputPath]);
+		await runCli([
+			"render",
+			skeletonPath,
+			lowQualityOutputPath,
+			"--no-lossless",
+			"--quality",
+			"20",
+		]);
+		await runCli([
+			"render",
+			skeletonPath,
+			highQualityOutputPath,
+			"--no-lossless",
+			"--quality",
+			"90",
+		]);
+		const losslessBytes = await readFile(losslessOutputPath);
+		const lowQualityBytes = await readFile(lowQualityOutputPath);
+		const highQualityBytes = await readFile(highQualityOutputPath);
+		const decoded = await decodeWebpFrames(lowQualityBytes);
+
+		expect(lowQualityBytes.byteLength).toBeLessThan(losslessBytes.byteLength);
+		expect(lowQualityBytes.byteLength).toBeLessThan(highQualityBytes.byteLength);
+		expect(decoded.format).toBe("webp");
+		expect(decoded.frames).toHaveLength(30);
 	} finally {
 		await rm(tempDirectory, { force: true, recursive: true });
 	}

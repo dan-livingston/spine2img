@@ -157,8 +157,55 @@ export async function createSelectableFixture(tempDirectory: string): Promise<st
 	return fixtureCopyDirectory;
 }
 
+export async function createNoisyFixture(tempDirectory: string): Promise<string> {
+	const fixtureCopyDirectory = path.join(tempDirectory, "noisy-fixture");
+	const texturePath = path.join(fixtureCopyDirectory, "box.png");
+	await cp(fixtureDirectory, fixtureCopyDirectory, { recursive: true });
+	const metadata = await sharp(texturePath).metadata();
+	const width = metadata.width ?? 64;
+	const height = metadata.height ?? 64;
+
+	await sharp(createNoiseTexture(width, height), {
+		raw: {
+			channels: 4,
+			height,
+			width,
+		},
+	})
+		.png()
+		.toFile(texturePath);
+
+	return fixtureCopyDirectory;
+}
+
 function getConsumerRequire() {
 	return createRequire(path.join(getConsumerDirectory(), "package.json"));
+}
+
+function createNoiseTexture(width: number, height: number): Uint8Array {
+	const texture = new Uint8Array(width * height * 4);
+
+	for (let y = 0; y < height; y += 1) {
+		for (let x = 0; x < width; x += 1) {
+			const offset = (y * width + x) * 4;
+			texture[offset] = clampColor(
+				(Math.sin(x / 6) + 1) * 92 + (Math.cos((x + y) / 15) + 1) * 28,
+			);
+			texture[offset + 1] = clampColor(
+				(Math.sin(y / 8) + 1) * 88 + (Math.cos(x / 17) + 1) * 34,
+			);
+			texture[offset + 2] = clampColor(
+				(Math.sin((x + y) / 11) + 1) * 84 + (Math.cos(y / 13) + 1) * 40,
+			);
+			texture[offset + 3] = 255;
+		}
+	}
+
+	return texture;
+}
+
+function clampColor(value: number): number {
+	return Math.max(0, Math.min(255, Math.round(value)));
 }
 
 async function readInstalledPackageMetadata() {

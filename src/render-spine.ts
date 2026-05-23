@@ -5,6 +5,7 @@ import { canvasSpineRenderer } from "#/lib/canvas-spine-renderer.ts";
 import { OutputCollisionError } from "#/lib/errors.ts";
 import { isMissingFileError, isNodeErrorWithCode } from "#/lib/node-errors.ts";
 import { resolveAnimatedImageEncoder } from "#/lib/resolve-animated-image-encoder.ts";
+import { resolveEncodeOptions } from "#/lib/resolve-encode-options.ts";
 import { resolveFormat, type ResolvedOutputFormat } from "#/lib/resolve-format.ts";
 import { resolveSpineInputs } from "#/lib/resolve-spine-inputs.ts";
 import { access, mkdir, writeFile } from "node:fs/promises";
@@ -21,8 +22,10 @@ export interface RenderSpineOptions<TOutputPath extends string = string> {
 	fps?: number;
 	format?: OutputFormat;
 	height?: number;
+	lossless?: boolean;
 	outputPath: TOutputPath;
 	overwrite?: boolean;
+	quality?: number;
 	skeletonPath: string;
 	skinName?: string;
 	width?: number;
@@ -62,6 +65,11 @@ export async function renderSpine(options: RenderSpineOptions): Promise<RenderSp
 		format: options.format,
 		outputPath: options.outputPath,
 	});
+	const encodeOptions = resolveEncodeOptions({
+		format,
+		lossless: options.lossless,
+		quality: options.quality,
+	});
 	const encoder = resolveAnimatedImageEncoder(format);
 	const inputs = resolveSpineInputs({
 		atlasPath: options.atlasPath,
@@ -94,6 +102,8 @@ export async function renderSpine(options: RenderSpineOptions): Promise<RenderSp
 			delaysMs: samples.map((sample) => sample.delayMs),
 			frames,
 			height: viewport.height,
+			lossless: encodeOptions.lossless,
+			quality: encodeOptions.quality,
 			width: viewport.width,
 		});
 

@@ -37,6 +37,8 @@ export function createCli(): Command {
 					"solid background hex color (#rgb, #rgba, #rrggbb, or #rrggbbaa)",
 				)
 				.option("--fps <fps>", "frames per second", Number)
+				.option("--no-lossless", "opt into lossy WebP output")
+				.option("--quality <quality>", "lossy WebP quality from 0 to 100", Number)
 				.option("--json", "print structured result metadata as JSON")
 				.option("--overwrite", "overwrite an existing output file")
 				.option("--skin <skin>", "exact skin name to apply")
@@ -51,7 +53,9 @@ export function createCli(): Command {
 						fps: options.fps,
 						format: options.format,
 						height: options.height,
+						lossless: options.lossless,
 						overwrite: options.overwrite,
+						quality: options.quality,
 						width: options.width,
 					});
 

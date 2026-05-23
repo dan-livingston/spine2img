@@ -11,11 +11,16 @@ export type SpineSelectionType = "animation" | "skin";
 export type SpineSelectionErrorCode = "missing-selection";
 
 export type OutputCollisionErrorCode = "existing-output";
+export type RenderOptionValidationErrorCode =
+	| "invalid-quality"
+	| "unsupported-lossy-output"
+	| "unsupported-quality-output";
 
 // Keep this union in sync with the `isRenderSpineError` guard below: every member
 // listed here must have a matching `instanceof` check there, and vice versa.
 export type RenderSpineError =
 	| OutputCollisionError
+	| RenderOptionValidationError
 	| SpineInputResolutionError
 	| SpineSelectionError;
 
@@ -43,6 +48,12 @@ export interface OutputCollisionErrorOptions {
 	code: OutputCollisionErrorCode;
 	message: string;
 	outputPath: string;
+}
+
+export interface RenderOptionValidationErrorOptions {
+	cause?: unknown;
+	code: RenderOptionValidationErrorCode;
+	message: string;
 }
 
 export class SpineInputResolutionError extends Error {
@@ -94,9 +105,24 @@ export class OutputCollisionError extends Error {
 	}
 }
 
+export class RenderOptionValidationError extends Error {
+	declare readonly cause: unknown;
+	readonly code: RenderOptionValidationErrorCode;
+
+	constructor(options: RenderOptionValidationErrorOptions) {
+		super(options.message, { cause: options.cause });
+		this.name = "RenderOptionValidationError";
+		this.code = options.code;
+	}
+}
+
 export function formatRenderErrorForCli(error: unknown): string {
 	if (error instanceof OutputCollisionError) {
 		return `Output already exists: ${error.outputPath}. Pass --overwrite to replace it.`;
+	}
+
+	if (error instanceof RenderOptionValidationError) {
+		return error.message;
 	}
 
 	if (error instanceof SpineInputResolutionError) {
@@ -140,10 +166,17 @@ export function isOutputCollisionError(error: unknown): error is OutputCollision
 	return error instanceof OutputCollisionError;
 }
 
+export function isRenderOptionValidationError(
+	error: unknown,
+): error is RenderOptionValidationError {
+	return error instanceof RenderOptionValidationError;
+}
+
 // Keep this guard in sync with the `RenderSpineError` union above.
 export function isRenderSpineError(error: unknown): error is RenderSpineError {
 	return (
 		isOutputCollisionError(error) ||
+		isRenderOptionValidationError(error) ||
 		isSpineInputResolutionError(error) ||
 		isSpineSelectionError(error)
 	);

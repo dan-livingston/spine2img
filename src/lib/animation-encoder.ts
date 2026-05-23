@@ -2,6 +2,8 @@ export interface EncodeAnimatedImageOptions {
 	delaysMs: number[];
 	frames: ArrayBuffer[];
 	height: number;
+	lossless: boolean;
+	quality?: number;
 	width: number;
 }
 

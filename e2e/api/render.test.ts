@@ -4,6 +4,7 @@ import path from "node:path";
 import { expect, test } from "vite-plus/test";
 
 import {
+	createNoisyFixture,
 	decodeApng,
 	decodeApngFrames,
 	decodeWebpFrames,
@@ -19,9 +20,11 @@ test("packed package exposes the stable public contract", async () => {
 
 	expect(Object.keys(packageApi).sort()).toEqual([
 		"OutputCollisionError",
+		"RenderOptionValidationError",
 		"SpineInputResolutionError",
 		"SpineSelectionError",
 		"isOutputCollisionError",
+		"isRenderOptionValidationError",
 		"isRenderSpineError",
 		"isSpineInputResolutionError",
 		"isSpineSelectionError",
@@ -106,6 +109,68 @@ test("packed package API renders the fixture to lossless animated WebP", async (
 		expect(
 			readPixel(decoded.frames[0], decoded.width, decoded.width - 1, decoded.height - 1),
 		).toEqual([0, 0, 0, 0]);
+	} finally {
+		await rm(tempDirectory, { force: true, recursive: true });
+	}
+});
+
+test("packed package API renders smaller lossy WebP output when requested", async () => {
+	const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-api-lossy-webp-"));
+
+	try {
+		const packageApi = await importPackageApi();
+		const fixtureCopyDirectory = await createNoisyFixture(tempDirectory);
+		const losslessOutputPath = path.join(tempDirectory, "lossless.webp");
+		const lossyOutputPath = path.join(tempDirectory, "lossy.webp");
+		await packageApi.renderSpine({
+			format: "webp",
+			outputPath: losslessOutputPath,
+			skeletonPath: path.join(fixtureCopyDirectory, "box.json"),
+		});
+		await packageApi.renderSpine({
+			format: "webp",
+			lossless: false,
+			outputPath: lossyOutputPath,
+			skeletonPath: path.join(fixtureCopyDirectory, "box.json"),
+		});
+		const losslessBytes = await readFile(losslessOutputPath);
+		const lossyBytes = await readFile(lossyOutputPath);
+		const decoded = await decodeWebpFrames(lossyBytes);
+
+		expect(lossyBytes.byteLength).toBeLessThan(losslessBytes.byteLength);
+		expect(decoded.format).toBe("webp");
+		expect(decoded.frames).toHaveLength(30);
+	} finally {
+		await rm(tempDirectory, { force: true, recursive: true });
+	}
+});
+
+test("packed package API uses quality to tune lossy WebP size", async () => {
+	const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-api-webp-quality-"));
+
+	try {
+		const packageApi = await importPackageApi();
+		const fixtureCopyDirectory = await createNoisyFixture(tempDirectory);
+		const lowQualityOutputPath = path.join(tempDirectory, "quality-20.webp");
+		const highQualityOutputPath = path.join(tempDirectory, "quality-90.webp");
+		await packageApi.renderSpine({
+			format: "webp",
+			lossless: false,
+			outputPath: lowQualityOutputPath,
+			quality: 20,
+			skeletonPath: path.join(fixtureCopyDirectory, "box.json"),
+		});
+		await packageApi.renderSpine({
+			format: "webp",
+			lossless: false,
+			outputPath: highQualityOutputPath,
+			quality: 90,
+			skeletonPath: path.join(fixtureCopyDirectory, "box.json"),
+		});
+
+		expect((await readFile(lowQualityOutputPath)).byteLength).toBeLessThan(
+			(await readFile(highQualityOutputPath)).byteLength,
+		);
 	} finally {
 		await rm(tempDirectory, { force: true, recursive: true });
 	}

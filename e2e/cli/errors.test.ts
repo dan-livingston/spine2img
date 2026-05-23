@@ -3,7 +3,12 @@ import os from "node:os";
 import path from "node:path";
 import { expect, test } from "vite-plus/test";
 
-import { createSelectableFixture, fixtureDirectory, runCli } from "../helpers.ts";
+import {
+	createSelectableFixture,
+	fixtureDirectory,
+	fixtureSkeletonPath,
+	runCli,
+} from "../helpers.ts";
 
 test("packed package CLI prints friendly typed input errors", async () => {
 	const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-cli-error-"));
@@ -117,6 +122,70 @@ test("packed package CLI reports (none) when the skeleton defines no skins", asy
 
 		expect(error).toBeInstanceOf(Error);
 		expect((error as { stderr?: string }).stderr).toContain("Available skins: (none).");
+	} finally {
+		await rm(tempDirectory, { force: true, recursive: true });
+	}
+});
+
+test("packed package CLI prints friendly encode validation errors", async () => {
+	const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-cli-encode-error-"));
+	const cases = [
+		{
+			args: [
+				"render",
+				fixtureSkeletonPath,
+				path.join(tempDirectory, "lossy.apng"),
+				"--no-lossless",
+			],
+			message: "lossless: false is only supported for WebP output.",
+		},
+		{
+			args: [
+				"render",
+				fixtureSkeletonPath,
+				path.join(tempDirectory, "quality.apng"),
+				"--quality",
+				"80",
+			],
+			message: "quality is only supported for lossy WebP output.",
+		},
+		{
+			args: [
+				"render",
+				fixtureSkeletonPath,
+				path.join(tempDirectory, "quality.webp"),
+				"--quality",
+				"80",
+			],
+			message: "quality is only supported for lossy WebP output.",
+		},
+		{
+			args: [
+				"render",
+				fixtureSkeletonPath,
+				path.join(tempDirectory, "invalid-quality.webp"),
+				"--no-lossless",
+				"--quality",
+				"200",
+			],
+			message: "quality must be a number between 0 and 100. Received 200.",
+		},
+	];
+
+	try {
+		for (const testCase of cases) {
+			let error: unknown;
+
+			try {
+				await runCli(testCase.args);
+			} catch (caught) {
+				error = caught;
+			}
+
+			expect(error).toBeInstanceOf(Error);
+			expect((error as { code?: number }).code).not.toBe(0);
+			expect((error as { stderr?: string }).stderr).toContain(testCase.message);
+		}
 	} finally {
 		await rm(tempDirectory, { force: true, recursive: true });
 	}

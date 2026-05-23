@@ -23,8 +23,9 @@ class WebpEncoder implements AnimatedImageEncoder<"webp"> {
 			.webp({
 				delay: options.delaysMs,
 				effort: 4,
-				lossless: true,
+				lossless: options.lossless,
 				loop: INFINITE_LOOP,
+				quality: options.lossless ? undefined : options.quality,
 			})
 			.toBuffer();
 

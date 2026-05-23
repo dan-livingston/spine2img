@@ -14,6 +14,7 @@ test("webpEncoder writes lossless animated WebP from straight-alpha RGBA frames"
 		delaysMs,
 		frames: frames.map((frame) => frame.buffer.slice(0)),
 		height,
+		lossless: true,
 		width,
 	});
 	const metadata = await sharp(encoded, { animated: true }).metadata();
@@ -41,6 +42,52 @@ test("webpEncoder writes lossless animated WebP from straight-alpha RGBA frames"
 	expect(splitFrames(data, width, height, frames.length)).toEqual(frames);
 });
 
+test("webpEncoder writes smaller lossy WebP output than lossless for the same frames", async () => {
+	const frames = createTestFrames(3, 48, 48);
+	const lossless = await webpEncoder.encode({
+		delaysMs: [50, 50, 50],
+		frames,
+		height: 48,
+		lossless: true,
+		width: 48,
+	});
+	const lossy = await webpEncoder.encode({
+		delaysMs: [50, 50, 50],
+		frames,
+		height: 48,
+		lossless: false,
+		quality: 80,
+		width: 48,
+	});
+	const metadata = await sharp(lossy, { animated: true }).metadata();
+
+	expect(lossy.byteLength).toBeLessThan(lossless.byteLength);
+	expect(metadata.format).toBe("webp");
+	expect(metadata.pages).toBe(3);
+});
+
+test("webpEncoder quality affects lossy WebP size", async () => {
+	const frames = createTestFrames(3, 48, 48);
+	const lowQuality = await webpEncoder.encode({
+		delaysMs: [50, 50, 50],
+		frames,
+		height: 48,
+		lossless: false,
+		quality: 20,
+		width: 48,
+	});
+	const highQuality = await webpEncoder.encode({
+		delaysMs: [50, 50, 50],
+		frames,
+		height: 48,
+		lossless: false,
+		quality: 90,
+		width: 48,
+	});
+
+	expect(lowQuality.byteLength).toBeLessThan(highQuality.byteLength);
+});
+
 function splitFrames(
 	encodedFrames: Uint8Array,
 	width: number,
@@ -55,4 +102,34 @@ function splitFrames(
 
 		return new Uint8Array(encodedFrames.slice(start, end));
 	});
+}
+
+function createTestFrames(frameCount: number, width: number, height: number): ArrayBuffer[] {
+	return Array.from({ length: frameCount }, (_, frameIndex) => {
+		const frame = new Uint8Array(width * height * 4);
+
+		for (let y = 0; y < height; y += 1) {
+			for (let x = 0; x < width; x += 1) {
+				const offset = (y * width + x) * 4;
+				frame[offset] = clampColor(
+					(Math.sin((x + frameIndex * 5) / 6) + 1) * 92 +
+						(Math.cos((x + y) / 15) + 1) * 28,
+				);
+				frame[offset + 1] = clampColor(
+					(Math.sin((y + frameIndex * 3) / 8) + 1) * 88 + (Math.cos(x / 17) + 1) * 34,
+				);
+				frame[offset + 2] = clampColor(
+					(Math.sin((x + y + frameIndex * 7) / 11) + 1) * 84 +
+						(Math.cos(y / 13) + 1) * 40,
+				);
+				frame[offset + 3] = 255;
+			}
+		}
+
+		return frame.buffer.slice(0);
+	});
+}
+
+function clampColor(value: number): number {
+	return Math.max(0, Math.min(255, Math.round(value)));
 }
