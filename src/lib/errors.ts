@@ -12,6 +12,13 @@ export type SpineSelectionErrorCode = "missing-selection";
 
 export type OutputCollisionErrorCode = "existing-output";
 
+// Keep this union in sync with the `isRenderSpineError` guard below: every member
+// listed here must have a matching `instanceof` check there, and vice versa.
+export type RenderSpineError =
+	| OutputCollisionError
+	| SpineInputResolutionError
+	| SpineSelectionError;
+
 export interface SpineInputResolutionErrorOptions {
 	assetPath: string;
 	assetType: SpineInputAssetType;
@@ -127,4 +134,17 @@ export function isSpineInputResolutionError(error: unknown): error is SpineInput
 
 export function isSpineSelectionError(error: unknown): error is SpineSelectionError {
 	return error instanceof SpineSelectionError;
+}
+
+export function isOutputCollisionError(error: unknown): error is OutputCollisionError {
+	return error instanceof OutputCollisionError;
+}
+
+// Keep this guard in sync with the `RenderSpineError` union above.
+export function isRenderSpineError(error: unknown): error is RenderSpineError {
+	return (
+		isOutputCollisionError(error) ||
+		isSpineInputResolutionError(error) ||
+		isSpineSelectionError(error)
+	);
 }

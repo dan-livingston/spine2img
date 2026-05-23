@@ -5,13 +5,14 @@ Render a Spine JSON animation to an APNG file from Node.js or the command line.
 ## API
 
 ```ts
-import { renderSpineToApng } from "spine2img";
+import { renderSpine } from "spine2img";
 
-const result = await renderSpineToApng({
+const result = await renderSpine({
 	animationName: "pulse",
 	skeletonPath: "fixtures/tracer-bullet/box.json",
 	atlasPath: "fixtures/tracer-bullet/box.atlas",
 	outputPath: "out/box.apng",
+	format: "apng",
 	overwrite: true,
 	fps: 24,
 	width: 120,
@@ -20,10 +21,11 @@ const result = await renderSpineToApng({
 });
 
 console.log(result.fps); // 24
+console.log(result.format); // "apng"
 console.log(result.frameCount); // structured metadata for automation
 ```
 
-When `fps` is omitted, rendering defaults to `30`. When `width` and `height` are omitted, the output auto-fits the animation bounds. Backgrounds stay transparent unless you pass a hex `backgroundColor`. Existing output files are protected by default; pass `overwrite: true` to replace them intentionally.
+When `format` is omitted, the library currently defaults to `"apng"`. When `fps` is omitted, rendering defaults to `30`. When `width` and `height` are omitted, the output auto-fits the animation bounds. Backgrounds stay transparent unless you pass a hex `backgroundColor`. Existing output files are protected by default; pass `overwrite: true` to replace them intentionally.
 
 Explicit `width`/`height` anchor the animation at the top-left of the canvas: a larger viewport pads the right and bottom, and a smaller viewport crops the right and bottom. The animation is not scaled or centered to fit.
 
@@ -55,7 +57,6 @@ Without `--overwrite`, the CLI fails if `out/box.apng` already exists.
 ## Development
 
 ```bash
+pnpm check --fix
 pnpm test
-pnpm build
-pnpm check
 ```

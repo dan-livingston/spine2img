@@ -2,15 +2,15 @@
 	"name": "spine2img",
 	"version": "0.0.0",
 	"description": "Render Spine JSON animations to APNG from Node.js or the CLI.",
-	"homepage": "https://github.com/author/library#readme",
+	"homepage": "https://github.com/dan-livingston/spine2img#readme",
 	"bugs": {
-		"url": "https://github.com/author/library/issues"
+		"url": "https://github.com/dan-livingston/spine2img/issues"
 	},
 	"license": "MIT",
-	"author": "Author Name <author.name@mail.com>",
+	"author": "Daniel Livingston <danieljlivingston@proton.me>",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/author/library.git"
+		"url": "git+https://github.com/dan-livingston/spine2img.git"
 	},
 	"bin": {
 		"spine2img": "./dist/bin.mjs"
@@ -19,12 +19,15 @@
 		"dist"
 	],
 	"type": "module",
+	"types": "./dist/index.d.mts",
 	"imports": {
 		"#/*": "./src/*"
 	},
 	"exports": {
-		".": "./dist/index.mjs",
-		"./bin": "./dist/bin.mjs",
+		".": {
+			"types": "./dist/index.d.mts",
+			"import": "./dist/index.mjs"
+		},
 		"./package.json": "./package.json"
 	},
 	"publishConfig": {
@@ -35,8 +38,7 @@
 		"dev": "vp pack --watch",
 		"test": "vp test",
 		"check": "vp check",
-		"prepublishOnly": "vp run build",
-		"prepare": "vp config"
+		"prepublishOnly": "vp run build"
 	},
 	"dependencies": {
 		"@esotericsoftware/spine-canvas": "^4.3.3",

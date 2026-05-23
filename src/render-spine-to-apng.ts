@@ -1,3 +1,12 @@
+import type { AnimatedImageEncoder, EncodeAnimatedImageOptions } from "#/lib/animation-encoder.ts";
+import type {
+	Bounds,
+	LoadedScene,
+	RendererBackend,
+	Sample,
+	Viewport,
+} from "#/lib/renderer-backend.ts";
+
 import { resolveSpineInputs } from "#/lib/resolve-spine-inputs.ts";
 import { toArrayBuffer } from "#/lib/to-array-buffer.ts";
 import {
@@ -27,64 +36,43 @@ import {
 
 const DEFAULT_FPS = 30;
 
-export interface RenderSpineToApngOptions {
+export type OutputFormat = "apng";
+
+export interface RenderSpineOptions {
 	animationName?: string;
-	skeletonPath: string;
 	atlasPath?: string;
+	backgroundColor?: string;
+	fps?: number;
+	format?: OutputFormat;
+	height?: number;
 	outputPath: string;
 	overwrite?: boolean;
-	fps?: number;
-	width?: number;
-	height?: number;
-	backgroundColor?: string;
+	skeletonPath: string;
 	skinName?: string;
+	width?: number;
 }
 
-export interface RenderSpineToApngResult {
-	format: "apng";
-	outputPath: string;
-	skeletonPath: string;
-	atlasPath: string;
+export interface RenderSpineResult<TFormat extends OutputFormat = OutputFormat> {
 	animationName: string;
+	atlasPath: string;
+	durationMs: number;
+	format: TFormat;
 	fps: number;
 	frameCount: number;
-	width: number;
 	height: number;
-	durationMs: number;
+	outputPath: string;
+	skeletonPath: string;
 	skinName?: string;
+	width: number;
 }
 
-interface LoadedScene {
-	animationName: string;
-	animationDurationSeconds: number;
+interface CanvasSceneHandle {
 	atlas: TextureAtlas;
-	skinName?: string;
 	skeletonData: Skeleton["data"];
+	skinName?: string;
 }
 
-interface Sample {
-	delayMs: number;
-	timeSeconds: number;
-}
-
-interface Bounds {
-	height: number;
-	maxX: number;
-	maxY: number;
-	minX: number;
-	minY: number;
-	width: number;
-}
-
-interface Viewport {
-	backgroundColor?: string;
-	height: number;
-	width: number;
-}
-
-export async function renderSpineToApng(
-	options: RenderSpineToApngOptions,
-): Promise<RenderSpineToApngResult> {
+export async function renderSpine(options: RenderSpineOptions): Promise<RenderSpineResult<"apng">> {
 	const fps = options.fps ?? DEFAULT_FPS;
 
 	if (!Number.isFinite(fps) || fps <= 0) {
@@ -94,6 +82,11 @@ export async function renderSpineToApng(
 	const backgroundColor = normalizeBackgroundColor(options.backgroundColor);
 	const explicitWidth = validateExplicitDimension("width", options.width);
 	const explicitHeight = validateExplicitDimension("height", options.height);
+	const format = options.format ?? "apng";
+
+	if (format !== "apng") {
+		return assertNever(format);
+	}
 
 	const inputs = resolveSpineInputs({
 		atlasPath: options.atlasPath,
@@ -106,36 +99,37 @@ export async function renderSpineToApng(
 
 	await assertOutputWritable(outputPath, overwrite);
 
-	const scene = await loadScene(skeletonPath, atlasPath, {
+	const scene = await canvasRenderer.loadScene({
 		animationName: options.animationName,
+		atlasPath,
+		skeletonPath,
 		skinName: options.skinName,
 	});
 
 	try {
 		const samples = createSamples(scene.animationDurationSeconds, fps);
-		const bounds = measureAnimationBounds(scene, samples);
+		const bounds = canvasRenderer.measureBounds(scene, samples);
 		const viewport: Viewport = {
 			backgroundColor,
 			height: explicitHeight ?? bounds.height,
 			width: explicitWidth ?? bounds.width,
 		};
-		const frames = renderFrames(scene, samples, bounds, viewport);
-		const encoded = UPNG.encode(
+		const frames = canvasRenderer.renderFrames(scene, samples, bounds, viewport);
+		const encoded = apngEncoder.encode({
+			delaysMs: samples.map((sample) => sample.delayMs),
 			frames,
-			viewport.width,
-			viewport.height,
-			0,
-			frames.length > 1 ? samples.map((sample) => sample.delayMs) : undefined,
-		);
+			height: viewport.height,
+			width: viewport.width,
+		});
 
 		await mkdir(path.dirname(outputPath), { recursive: true });
-		await writeOutputFile(outputPath, Buffer.from(encoded), overwrite);
+		await writeOutputFile(outputPath, encoded, overwrite);
 
 		return {
 			animationName: scene.animationName,
 			atlasPath,
 			durationMs: samples.reduce((total, sample) => total + sample.delayMs, 0),
-			format: "apng",
+			format,
 			fps,
 			frameCount: frames.length,
 			height: viewport.height,
@@ -145,9 +139,145 @@ export async function renderSpineToApng(
 			width: viewport.width,
 		};
 	} finally {
-		scene.atlas.dispose();
+		canvasRenderer.disposeScene(scene);
 	}
 }
+
+export function renderSpineToApng(
+	options: Omit<RenderSpineOptions, "format">,
+): Promise<RenderSpineResult<"apng">> {
+	return renderSpine({ ...options, format: "apng" });
+}
+
+class CanvasSpineRenderer implements RendererBackend<CanvasSceneHandle> {
+	disposeScene(scene: LoadedScene<CanvasSceneHandle>): void {
+		scene.handle.atlas.dispose();
+	}
+
+	async loadScene(options: {
+		animationName?: string;
+		atlasPath: string;
+		skeletonPath: string;
+		skinName?: string;
+	}): Promise<LoadedScene<CanvasSceneHandle>> {
+		// Read first, because it's cheap and fails fast.
+		const skeletonSource = await readTextAsset("skeleton", options.skeletonPath);
+		const atlas = await loadTextureAtlas(options.atlasPath);
+		const attachmentLoader = new AtlasAttachmentLoader(atlas);
+		const skeletonJson = new SkeletonJson(attachmentLoader);
+
+		let skeletonData: Skeleton["data"];
+
+		try {
+			skeletonData = skeletonJson.readSkeletonData(skeletonSource);
+		} catch (error) {
+			atlas.dispose();
+			throw toSkeletonLoadError(options.skeletonPath, options.atlasPath, error);
+		}
+
+		try {
+			const animation = selectAnimation(
+				options.skeletonPath,
+				skeletonData,
+				options.animationName,
+			);
+			const skinName = options.skinName
+				? selectNamedEntry({
+						availableNames: skeletonData.skins.map((skin) => skin.name),
+						requestedName: options.skinName,
+						selectionType: "skin",
+						skeletonPath: options.skeletonPath,
+					})
+				: undefined;
+
+			return {
+				animationDurationSeconds: animation.duration,
+				animationName: animation.name,
+				handle: {
+					atlas,
+					skeletonData,
+					skinName,
+				},
+				skinName,
+			};
+		} catch (error) {
+			atlas.dispose();
+			throw error;
+		}
+	}
+
+	measureBounds(scene: LoadedScene<CanvasSceneHandle>, samples: Sample[]): Bounds {
+		let minX = Number.POSITIVE_INFINITY;
+		let minY = Number.POSITIVE_INFINITY;
+		let maxX = Number.NEGATIVE_INFINITY;
+		let maxY = Number.NEGATIVE_INFINITY;
+
+		for (const sample of samples) {
+			const skeleton = poseSkeleton(scene, sample.timeSeconds);
+			const offset = new Vector2();
+			const size = new Vector2();
+			skeleton.getBounds(offset, size, []);
+
+			minX = Math.min(minX, offset.x);
+			minY = Math.min(minY, offset.y);
+			maxX = Math.max(maxX, offset.x + size.x);
+			maxY = Math.max(maxY, offset.y + size.y);
+		}
+
+		return {
+			height: Math.max(1, Math.ceil(maxY - minY)),
+			maxX,
+			maxY,
+			minX,
+			minY,
+			width: Math.max(1, Math.ceil(maxX - minX)),
+		};
+	}
+
+	renderFrames(
+		scene: LoadedScene<CanvasSceneHandle>,
+		samples: Sample[],
+		bounds: Bounds,
+		viewport: Viewport,
+	): ArrayBuffer[] {
+		return samples.map((sample) => {
+			const skeleton = poseSkeleton(scene, sample.timeSeconds);
+			const canvas = createCanvas(viewport.width, viewport.height);
+			const context = canvas.getContext("2d");
+
+			if (viewport.backgroundColor) {
+				context.fillStyle = viewport.backgroundColor;
+				context.fillRect(0, 0, viewport.width, viewport.height);
+			}
+
+			context.translate(-bounds.minX, -bounds.minY);
+
+			const renderer = new SkeletonRenderer(context);
+			renderer.draw(skeleton);
+
+			return toArrayBuffer(canvas.data());
+		});
+	}
+}
+
+class ApngEncoder implements AnimatedImageEncoder<"apng"> {
+	readonly format = "apng";
+
+	encode(options: EncodeAnimatedImageOptions): Uint8Array {
+		return new Uint8Array(
+			UPNG.encode(
+				options.frames,
+				options.width,
+				options.height,
+				0,
+				options.frames.length > 1 ? options.delaysMs : undefined,
+			),
+		);
+	}
+}
+
+const canvasRenderer = new CanvasSpineRenderer();
+const apngEncoder = new ApngEncoder();
 
 async function assertOutputWritable(outputPath: string, overwrite: boolean): Promise<void> {
 	if (overwrite) {
@@ -188,50 +318,6 @@ async function writeOutputFile(
 			});
 		}
 
-		throw error;
-	}
-}
-
-async function loadScene(
-	skeletonPath: string,
-	atlasPath: string,
-	options: Pick<RenderSpineToApngOptions, "animationName" | "skinName">,
-): Promise<LoadedScene> {
-	// Read first, because it's cheap and fails fast.
-	const skeletonSource = await readTextAsset("skeleton", skeletonPath);
-	const atlas = await loadTextureAtlas(atlasPath);
-	const attachmentLoader = new AtlasAttachmentLoader(atlas);
-	const skeletonJson = new SkeletonJson(attachmentLoader);
-
-	let skeletonData: Skeleton["data"];
-
-	try {
-		skeletonData = skeletonJson.readSkeletonData(skeletonSource);
-	} catch (error) {
-		atlas.dispose();
-		throw toSkeletonLoadError(skeletonPath, atlasPath, error);
-	}
-
-	try {
-		const animation = selectAnimation(skeletonPath, skeletonData, options.animationName);
-		const skinName = options.skinName
-			? selectNamedEntry({
-					availableNames: skeletonData.skins.map((skin) => skin.name),
-					requestedName: options.skinName,
-					selectionType: "skin",
-					skeletonPath,
-				})
-			: undefined;
-
-		return {
-			animationDurationSeconds: animation.duration,
-			animationName: animation.name,
-			atlas,
-			skeletonData,
-			skinName,
-		};
-	} catch (error) {
-		atlas.dispose();
 		throw error;
 	}
 }
@@ -298,34 +384,6 @@ function createSamples(durationSeconds: number, fps: number): Sample[] {
 	}));
 }
 
-function measureAnimationBounds(scene: LoadedScene, samples: Sample[]): Bounds {
-	let minX = Number.POSITIVE_INFINITY;
-	let minY = Number.POSITIVE_INFINITY;
-	let maxX = Number.NEGATIVE_INFINITY;
-	let maxY = Number.NEGATIVE_INFINITY;
-
-	for (const sample of samples) {
-		const skeleton = poseSkeleton(scene, sample.timeSeconds);
-		const offset = new Vector2();
-		const size = new Vector2();
-		skeleton.getBounds(offset, size, []);
-
-		minX = Math.min(minX, offset.x);
-		minY = Math.min(minY, offset.y);
-		maxX = Math.max(maxX, offset.x + size.x);
-		maxY = Math.max(maxY, offset.y + size.y);
-	}
-
-	return {
-		height: Math.max(1, Math.ceil(maxY - minY)),
-		maxX,
-		maxY,
-		minX,
-		minY,
-		width: Math.max(1, Math.ceil(maxX - minX)),
-	};
-}
-
 function validateExplicitDimension(
 	name: "height" | "width",
 	value: number | undefined,
@@ -368,37 +426,12 @@ function normalizeBackgroundColor(backgroundColor: string | undefined): string |
 	return `rgba(${red}, ${green}, ${blue}, ${Number((alphaByte / 255).toFixed(3))})`;
 }
 
-function renderFrames(
-	scene: LoadedScene,
-	samples: Sample[],
-	bounds: Bounds,
-	viewport: Viewport,
-): ArrayBuffer[] {
-	return samples.map((sample) => {
-		const skeleton = poseSkeleton(scene, sample.timeSeconds);
-		const canvas = createCanvas(viewport.width, viewport.height);
-		const context = canvas.getContext("2d");
-
-		if (viewport.backgroundColor) {
-			context.fillStyle = viewport.backgroundColor;
-			context.fillRect(0, 0, viewport.width, viewport.height);
-		}
-
-		context.translate(-bounds.minX, -bounds.minY);
-
-		const renderer = new SkeletonRenderer(context);
-		renderer.draw(skeleton);
-
-		return toArrayBuffer(canvas.data());
-	});
-}
-
-function poseSkeleton(scene: LoadedScene, timeSeconds: number): Skeleton {
-	const skeleton = new Skeleton(scene.skeletonData);
-	const animationState = new AnimationState(new AnimationStateData(scene.skeletonData));
-	const selectedSkin = scene.skinName
-		? scene.skeletonData.findSkin(scene.skinName)
-		: scene.skeletonData.defaultSkin;
+function poseSkeleton(scene: LoadedScene<CanvasSceneHandle>, timeSeconds: number): Skeleton {
+	const skeleton = new Skeleton(scene.handle.skeletonData);
+	const animationState = new AnimationState(new AnimationStateData(scene.handle.skeletonData));
+	const selectedSkin = scene.handle.skinName
+		? scene.handle.skeletonData.findSkin(scene.handle.skinName)
+		: scene.handle.skeletonData.defaultSkin;
 
 	skeleton.scaleY = -1;
 
@@ -589,4 +622,8 @@ function isUnreadableFileError(error: unknown): error is NodeJS.ErrnoException {
 
 function isNodeErrorWithCode(error: unknown, code: string): error is NodeJS.ErrnoException {
 	return error instanceof Error && "code" in error && error.code === code;
+}
+
+function assertNever(value: never): never {
+	throw new Error(`Unsupported output format: ${String(value)}.`);
 }

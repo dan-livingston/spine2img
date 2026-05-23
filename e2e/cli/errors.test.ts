@@ -5,7 +5,7 @@ import { expect, test } from "vite-plus/test";
 
 import { createSelectableFixture, fixtureDirectory, runCli } from "../helpers.ts";
 
-test("built package CLI prints friendly typed input errors", async () => {
+test("packed package CLI prints friendly typed input errors", async () => {
 	const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-cli-error-"));
 
 	try {
@@ -32,7 +32,7 @@ test("built package CLI prints friendly typed input errors", async () => {
 	}
 });
 
-test("built package CLI prints friendly animation lookup errors", async () => {
+test("packed package CLI prints friendly animation lookup errors", async () => {
 	const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-cli-animation-error-"));
 
 	try {
@@ -62,7 +62,7 @@ test("built package CLI prints friendly animation lookup errors", async () => {
 	}
 });
 
-test("built package CLI prints friendly skin lookup errors", async () => {
+test("packed package CLI prints friendly skin lookup errors", async () => {
 	const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-cli-skin-error-"));
 
 	try {
@@ -90,7 +90,7 @@ test("built package CLI prints friendly skin lookup errors", async () => {
 	}
 });
 
-test("built package CLI reports (none) when the skeleton defines no skins", async () => {
+test("packed package CLI reports (none) when the skeleton defines no skins", async () => {
 	const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-cli-no-skins-"));
 
 	try {

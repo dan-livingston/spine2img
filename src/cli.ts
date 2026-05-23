@@ -1,4 +1,4 @@
-import { renderSpineToApng } from "#/render-spine-to-apng.ts";
+import { renderSpine } from "#/render-spine-to-apng.ts";
 import { Command } from "commander";
 
 export function createCli(): Command {
@@ -28,7 +28,7 @@ export function createCli(): Command {
 				.option("--overwrite", "overwrite an existing output file")
 				.option("--skin <skin>", "exact skin name to apply")
 				.action(async (skeleton, output, options) => {
-					const result = await renderSpineToApng({
+					const result = await renderSpine({
 						skeletonPath: skeleton,
 						outputPath: output,
 						atlasPath: options.atlas,

@@ -5,7 +5,7 @@ import { expect, test } from "vite-plus/test";
 
 import { createSelectableFixture, decodeApng, importPackageApi } from "../helpers.ts";
 
-test("built package API renders a selected animation and skin", async () => {
+test("packed package API renders a selected animation and skin", async () => {
 	const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-api-selection-"));
 
 	try {
@@ -14,13 +14,13 @@ test("built package API renders a selected animation and skin", async () => {
 		const altOutputPath = path.join(tempDirectory, "selected-alt.apng");
 		const defaultOutputPath = path.join(tempDirectory, "selected-default.apng");
 		const packageApi = await importPackageApi();
-		const altResult = await packageApi.renderSpineToApng({
+		const altResult = await packageApi.renderSpine({
 			animationName: "pulse-short",
 			outputPath: altOutputPath,
 			skeletonPath,
 			skinName: "alt",
 		});
-		const defaultResult = await packageApi.renderSpineToApng({
+		const defaultResult = await packageApi.renderSpine({
 			animationName: "pulse-short",
 			outputPath: defaultOutputPath,
 			skeletonPath,
@@ -48,7 +48,7 @@ test("built package API renders a selected animation and skin", async () => {
 	}
 });
 
-test("built package API throws typed errors for missing animation selections", async () => {
+test("packed package API throws typed errors for missing animation selections", async () => {
 	const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-api-animation-error-"));
 
 	try {
@@ -58,7 +58,7 @@ test("built package API throws typed errors for missing animation selections", a
 		let error: unknown;
 
 		try {
-			await packageApi.renderSpineToApng({
+			await packageApi.renderSpine({
 				animationName: "missing",
 				outputPath: path.join(tempDirectory, "missing-animation.apng"),
 				skeletonPath: path.join(fixtureCopyDirectory, "box.json"),
@@ -79,7 +79,7 @@ test("built package API throws typed errors for missing animation selections", a
 	}
 });
 
-test("built package API throws typed errors for missing skin selections", async () => {
+test("packed package API throws typed errors for missing skin selections", async () => {
 	const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-api-skin-error-"));
 
 	try {
@@ -89,7 +89,7 @@ test("built package API throws typed errors for missing skin selections", async 
 		let error: unknown;
 
 		try {
-			await packageApi.renderSpineToApng({
+			await packageApi.renderSpine({
 				outputPath: path.join(tempDirectory, "missing-skin.apng"),
 				skeletonPath: path.join(fixtureCopyDirectory, "box.json"),
 				skinName: "missing",

@@ -11,7 +11,7 @@ import {
 	runCli,
 } from "../helpers.ts";
 
-test("built package CLI renders the same fixture", async () => {
+test("packed package CLI renders the same fixture", async () => {
 	const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-cli-e2e-"));
 
 	try {
@@ -30,7 +30,7 @@ test("built package CLI renders the same fixture", async () => {
 	}
 });
 
-test("built package CLI can print structured result metadata as JSON", async () => {
+test("packed package CLI can print structured result metadata as JSON", async () => {
 	const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-cli-json-"));
 
 	try {
@@ -73,7 +73,7 @@ test("built package CLI can print structured result metadata as JSON", async () 
 	}
 });
 
-test("built package CLI can apply explicit size and background color", async () => {
+test("packed package CLI can apply explicit size and background color", async () => {
 	const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-cli-background-"));
 
 	try {

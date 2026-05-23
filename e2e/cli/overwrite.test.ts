@@ -5,7 +5,7 @@ import { expect, test } from "vite-plus/test";
 
 import { decodeApng, fixtureSkeletonPath, runCli } from "../helpers.ts";
 
-test("built package CLI protects existing outputs unless --overwrite is passed", async () => {
+test("packed package CLI protects existing outputs unless --overwrite is passed", async () => {
 	const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-cli-overwrite-"));
 
 	try {

@@ -1,5 +1,6 @@
 export {
 	OutputCollisionError,
+	type RenderSpineError,
 	SpineInputResolutionError,
 	SpineSelectionError,
 	type OutputCollisionErrorCode,
@@ -7,9 +8,15 @@ export {
 	type SpineInputResolutionErrorCode,
 	type SpineSelectionErrorCode,
 	type SpineSelectionType,
+	isOutputCollisionError,
+	isRenderSpineError,
+	isSpineInputResolutionError,
+	isSpineSelectionError,
 } from "./lib/errors.ts";
 export {
+	type OutputFormat,
+	renderSpine,
 	renderSpineToApng,
-	type RenderSpineToApngOptions,
-	type RenderSpineToApngResult,
+	type RenderSpineOptions,
+	type RenderSpineResult,
 } from "#/render-spine-to-apng.ts";

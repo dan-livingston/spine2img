@@ -5,7 +5,7 @@ import { expect, test } from "vite-plus/test";
 
 import { decodeApng, fixtureSkeletonPath, importPackageApi } from "../helpers.ts";
 
-test("built package API protects existing outputs unless overwrite is enabled", async () => {
+test("packed package API protects existing outputs unless overwrite is enabled", async () => {
 	const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-api-overwrite-"));
 
 	try {
@@ -17,7 +17,7 @@ test("built package API protects existing outputs unless overwrite is enabled", 
 		let error: unknown;
 
 		try {
-			await packageApi.renderSpineToApng({
+			await packageApi.renderSpine({
 				outputPath,
 				skeletonPath: fixtureSkeletonPath,
 			});
@@ -32,7 +32,7 @@ test("built package API protects existing outputs unless overwrite is enabled", 
 		});
 		expect(await readFile(outputPath)).toEqual(originalBytes);
 
-		const result = await packageApi.renderSpineToApng({
+		const result = await packageApi.renderSpine({
 			outputPath,
 			overwrite: true,
 			skeletonPath: fixtureSkeletonPath,

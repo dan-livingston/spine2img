@@ -5,7 +5,7 @@ import { expect, test } from "vite-plus/test";
 
 import { fixtureDirectory, importPackageApi } from "../helpers.ts";
 
-test("built package API throws typed errors for missing default atlas input", async () => {
+test("packed package API throws typed errors for missing default atlas input", async () => {
 	const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-api-missing-atlas-"));
 
 	try {
@@ -18,7 +18,7 @@ test("built package API throws typed errors for missing default atlas input", as
 		let error: unknown;
 
 		try {
-			await packageApi.renderSpineToApng({
+			await packageApi.renderSpine({
 				outputPath: path.join(tempDirectory, "missing.apng"),
 				skeletonPath: path.join(fixtureCopyDirectory, "box.json"),
 			});
@@ -36,7 +36,7 @@ test("built package API throws typed errors for missing default atlas input", as
 	}
 });
 
-test("built package API throws typed errors for inconsistent skeleton and atlas inputs", async () => {
+test("packed package API throws typed errors for inconsistent skeleton and atlas inputs", async () => {
 	const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-api-inconsistent-"));
 
 	try {
@@ -53,7 +53,7 @@ test("built package API throws typed errors for inconsistent skeleton and atlas 
 		let error: unknown;
 
 		try {
-			await packageApi.renderSpineToApng({
+			await packageApi.renderSpine({
 				outputPath: path.join(tempDirectory, "inconsistent.apng"),
 				skeletonPath,
 			});
@@ -71,7 +71,7 @@ test("built package API throws typed errors for inconsistent skeleton and atlas 
 	}
 });
 
-test("built package API throws typed errors for a missing texture referenced by the atlas", async () => {
+test("packed package API throws typed errors for a missing texture referenced by the atlas", async () => {
 	const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-api-missing-texture-"));
 
 	try {
@@ -84,7 +84,7 @@ test("built package API throws typed errors for a missing texture referenced by 
 		let error: unknown;
 
 		try {
-			await packageApi.renderSpineToApng({
+			await packageApi.renderSpine({
 				outputPath: path.join(tempDirectory, "missing-texture.apng"),
 				skeletonPath: path.join(fixtureCopyDirectory, "box.json"),
 			});
@@ -102,7 +102,7 @@ test("built package API throws typed errors for a missing texture referenced by 
 	}
 });
 
-test("built package API throws typed errors for malformed skeleton JSON", async () => {
+test("packed package API throws typed errors for malformed skeleton JSON", async () => {
 	const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-api-invalid-skeleton-"));
 
 	try {
@@ -116,7 +116,7 @@ test("built package API throws typed errors for malformed skeleton JSON", async 
 		let error: unknown;
 
 		try {
-			await packageApi.renderSpineToApng({
+			await packageApi.renderSpine({
 				outputPath: path.join(tempDirectory, "invalid-skeleton.apng"),
 				skeletonPath,
 			});

@@ -8,16 +8,47 @@ import {
 	decodeApngFrames,
 	fixtureSkeletonPath,
 	importPackageApi,
+	readInstalledPackageJson,
 	readPixel,
 } from "../helpers.ts";
 
-test("built package API renders the fixture to APNG", async () => {
+test("packed package exposes the stable public contract", async () => {
+	const packageApi = await importPackageApi();
+	const packageJson = await readInstalledPackageJson();
+
+	expect(Object.keys(packageApi).sort()).toEqual([
+		"OutputCollisionError",
+		"SpineInputResolutionError",
+		"SpineSelectionError",
+		"isOutputCollisionError",
+		"isRenderSpineError",
+		"isSpineInputResolutionError",
+		"isSpineSelectionError",
+		"renderSpine",
+		"renderSpineToApng",
+	]);
+	expect(packageJson.bin).toEqual({
+		spine2img: "./dist/bin.mjs",
+	});
+	expect(packageJson.exports).toEqual({
+		".": {
+			import: "./dist/index.mjs",
+			types: "./dist/index.d.mts",
+		},
+		"./package.json": "./package.json",
+	});
+	expect(packageJson.files).toEqual(["dist"]);
+	expect(packageJson.types).toBe("./dist/index.d.mts");
+});
+
+test("packed package API renders the fixture to APNG", async () => {
 	const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-api-e2e-"));
 
 	try {
 		const outputPath = path.join(tempDirectory, "api.apng");
 		const packageApi = await importPackageApi();
-		const result = await packageApi.renderSpineToApng({
+		const result = await packageApi.renderSpine({
+			format: "apng",
 			outputPath,
 			skeletonPath: fixtureSkeletonPath,
 		});
@@ -37,18 +68,19 @@ test("built package API renders the fixture to APNG", async () => {
 			height: 64,
 			width: 97,
 		});
+		expect(packageApi.renderSpineToApng).toBeTypeOf("function");
 	} finally {
 		await rm(tempDirectory, { force: true, recursive: true });
 	}
 });
 
-test("built package API applies explicit fps to sampling and metadata", async () => {
+test("packed package API applies explicit fps to sampling and metadata", async () => {
 	const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-api-fps-"));
 
 	try {
 		const outputPath = path.join(tempDirectory, "api-fps.apng");
 		const packageApi = await importPackageApi();
-		const result = await packageApi.renderSpineToApng({
+		const result = await packageApi.renderSpine({
 			fps: 12,
 			outputPath,
 			skeletonPath: fixtureSkeletonPath,
@@ -66,13 +98,31 @@ test("built package API applies explicit fps to sampling and metadata", async ()
 	}
 });
 
-test("built package API can override viewport size while keeping transparency by default", async () => {
+test("packed package API keeps the APNG alias working for compatibility", async () => {
+	const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-api-alias-"));
+
+	try {
+		const outputPath = path.join(tempDirectory, "api-alias.apng");
+		const packageApi = await importPackageApi();
+		const result = await packageApi.renderSpineToApng({
+			outputPath,
+			skeletonPath: fixtureSkeletonPath,
+		});
+
+		expect(result.format).toBe("apng");
+		expect(result.outputPath).toBe(outputPath);
+	} finally {
+		await rm(tempDirectory, { force: true, recursive: true });
+	}
+});
+
+test("packed package API can override viewport size while keeping transparency by default", async () => {
 	const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-api-viewport-"));
 
 	try {
 		const outputPath = path.join(tempDirectory, "api-viewport.apng");
 		const packageApi = await importPackageApi();
-		const result = await packageApi.renderSpineToApng({
+		const result = await packageApi.renderSpine({
 			height: 80,
 			outputPath,
 			skeletonPath: fixtureSkeletonPath,

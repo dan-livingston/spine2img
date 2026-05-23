@@ -1,6 +1,7 @@
 import { toArrayBuffer } from "#/lib/to-array-buffer.ts";
 import { execFile } from "node:child_process";
 import { cp, readFile, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
@@ -13,15 +14,28 @@ export const fixtureDirectory = path.join(rootDirectory, "fixtures", "tracer-bul
 export const fixtureSkeletonPath = path.join(fixtureDirectory, "box.json");
 
 export async function importPackageApi(): Promise<typeof import("#/index.ts")> {
-	return (await import(
-		pathToFileURL(path.join(rootDirectory, "dist", "index.mjs")).href
-	)) as typeof import("#/index.ts");
+	const { packageEntryPath } = await readInstalledPackageMetadata();
+
+	return (await import(pathToFileURL(packageEntryPath).href)) as typeof import("#/index.ts");
 }
 
 export function runCli(args: string[]) {
-	return execFileAsync("node", [path.join(rootDirectory, "dist", "bin.mjs"), ...args], {
+	return execFileAsync(getInstalledCliPath(), args, {
 		cwd: rootDirectory,
 	});
+}
+
+interface InstalledPackageJson {
+	bin?: Record<string, string>;
+	exports?: Record<string, string | { import?: string; types?: string }>;
+	files?: string[];
+	name: string;
+	types?: string;
+	version: string;
+}
+
+export async function readInstalledPackageJson(): Promise<InstalledPackageJson> {
+	return (await readInstalledPackageMetadata()).packageJson;
 }
 
 export function decodeApng(file: Uint8Array) {
@@ -115,4 +129,47 @@ export async function createSelectableFixture(tempDirectory: string): Promise<st
 	await writeFile(skeletonPath, `${JSON.stringify(skeleton, null, "\t")}\n`);
 
 	return fixtureCopyDirectory;
+}
+
+function getConsumerRequire() {
+	return createRequire(path.join(getConsumerDirectory(), "package.json"));
+}
+
+async function readInstalledPackageMetadata() {
+	const consumerRequire = getConsumerRequire();
+	const packageJsonPath = consumerRequire.resolve("spine2img/package.json");
+	const packageJson = JSON.parse(await readFile(packageJsonPath, "utf8")) as InstalledPackageJson;
+	const packageRoot = path.dirname(packageJsonPath);
+	const entryExport = packageJson.exports?.["."];
+	const packageEntryPath =
+		typeof entryExport === "string"
+			? path.join(packageRoot, entryExport)
+			: entryExport?.import
+				? path.join(packageRoot, entryExport.import)
+				: undefined;
+
+	if (!packageEntryPath) {
+		throw new Error(`Installed package does not define an import entry in ${packageJsonPath}.`);
+	}
+
+	return {
+		packageEntryPath,
+		packageJson,
+	};
+}
+
+function getInstalledCliPath(): string {
+	// Resolves the POSIX bin shim directly; on Windows the installed bin is a
+	// .cmd/.ps1 wrapper, so this would need the extension (CI is Linux-only).
+	return path.join(getConsumerDirectory(), "node_modules", ".bin", "spine2img");
+}
+
+function getConsumerDirectory(): string {
+	const consumerDirectory = process.env.SPINE2IMG_E2E_CONSUMER_DIRECTORY;
+
+	if (!consumerDirectory) {
+		throw new Error("SPINE2IMG_E2E_CONSUMER_DIRECTORY is not set.");
+	}
+
+	return consumerDirectory;
 }
