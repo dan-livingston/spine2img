@@ -13,6 +13,18 @@ const rootDirectory = path.resolve(new URL("..", import.meta.url).pathname);
 
 export const fixtureDirectory = path.join(rootDirectory, "fixtures", "tracer-bullet");
 export const fixtureSkeletonPath = path.join(fixtureDirectory, "box.json");
+export const animatedFormatCases = [
+	{
+		extension: "apng",
+		format: "apng",
+	},
+	{
+		extension: "webp",
+		format: "webp",
+	},
+] as const;
+
+export type AnimatedFormatCase = (typeof animatedFormatCases)[number];
 
 export async function importPackageApi(): Promise<typeof import("#/index.ts")> {
 	const { packageEntryPath } = await readInstalledPackageMetadata();
@@ -44,6 +56,20 @@ export function decodeApng(file: Uint8Array) {
 
 	return {
 		frameCount: UPNG.toRGBA8(decoded).length,
+		height: decoded.height,
+		width: decoded.width,
+	};
+}
+
+export async function decodeAnimation(file: Uint8Array, format: AnimatedFormatCase["format"]) {
+	if (format === "apng") {
+		return decodeApng(file);
+	}
+
+	const decoded = await decodeWebpFrames(file);
+
+	return {
+		frameCount: decoded.frames.length,
 		height: decoded.height,
 		width: decoded.width,
 	};

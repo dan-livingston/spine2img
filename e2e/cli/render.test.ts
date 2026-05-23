@@ -1,10 +1,12 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { expect, test } from "vite-plus/test";
+import { describe, expect, test } from "vite-plus/test";
 
 import {
+	animatedFormatCases,
 	createNoisyFixture,
+	decodeAnimation,
 	decodeApng,
 	decodeApngFrames,
 	decodeWebpFrames,
@@ -13,7 +15,7 @@ import {
 	runCli,
 } from "../helpers.ts";
 
-test("packed package CLI renders the same fixture", async () => {
+test("packed package CLI renders the fixture to APNG", async () => {
 	const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-cli-e2e-"));
 
 	try {
@@ -32,69 +34,80 @@ test("packed package CLI renders the same fixture", async () => {
 	}
 });
 
-test("packed package CLI can print structured result metadata as JSON", async () => {
-	const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-cli-json-"));
-
-	try {
-		const outputPath = path.join(tempDirectory, "cli-json.apng");
-		const { stdout } = await runCli([
-			"render",
-			fixtureSkeletonPath,
-			outputPath,
-			"--fps",
-			"12",
-			"--json",
-		]);
-		const result = JSON.parse(stdout) as {
-			animationName: string;
-			durationMs: number;
-			fps: number;
-			frameCount: number;
-			format: string;
-			height: number;
-			lossless: boolean;
-			outputPath: string;
-			quality?: number;
-			width: number;
-		};
-		const decoded = decodeApng(await readFile(outputPath));
-
-		expect(result).toMatchObject({
-			animationName: "pulse",
-			durationMs: 996,
-			fps: 12,
-			format: "apng",
-			frameCount: 12,
-			height: 64,
-			lossless: true,
-			outputPath,
-			width: 97,
-		});
-		expect(result).not.toHaveProperty("quality");
-		expect(decoded.frameCount).toBe(result.frameCount);
-		expect(decoded.height).toBe(result.height);
-		expect(decoded.width).toBe(result.width);
-	} finally {
-		await rm(tempDirectory, { force: true, recursive: true });
-	}
-});
-
-test("packed package CLI infers WebP from a .webp output path", async () => {
-	const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-cli-webp-"));
+test("packed package CLI renders the fixture to lossless animated WebP", async () => {
+	const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-cli-webp-render-"));
 
 	try {
 		const outputPath = path.join(tempDirectory, "cli.webp");
-		const { stdout } = await runCli(["render", fixtureSkeletonPath, outputPath, "--json"]);
-		const result = JSON.parse(stdout) as { format: string; frameCount: number };
+		const { stdout } = await runCli(["render", fixtureSkeletonPath, outputPath]);
 		const decoded = await decodeWebpFrames(await readFile(outputPath));
 
-		expect(result.format).toBe("webp");
+		expect(stdout).toContain("Rendered pulse");
 		expect(decoded.format).toBe("webp");
-		expect(decoded.frames).toHaveLength(result.frameCount);
+		expect(decoded.delay).toEqual(Array.from({ length: 30 }, () => 33));
+		expect(decoded.frames).toHaveLength(30);
+		expect(decoded.height).toBe(64);
+		expect(decoded.loop).toBe(0);
+		expect(decoded.width).toBe(97);
+		expect(
+			readPixel(decoded.frames[0], decoded.width, decoded.width - 1, decoded.height - 1),
+		).toEqual([0, 0, 0, 0]);
 	} finally {
 		await rm(tempDirectory, { force: true, recursive: true });
 	}
 });
+
+describe.each(animatedFormatCases)(
+	"packed package CLI can print structured JSON metadata for $format output",
+	({ extension, format }) => {
+		test("json output reports the rendered artifact", async () => {
+			const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-cli-json-"));
+
+			try {
+				const outputPath = path.join(tempDirectory, `cli-json.${extension}`);
+				const { stdout } = await runCli([
+					"render",
+					fixtureSkeletonPath,
+					outputPath,
+					"--fps",
+					"12",
+					"--json",
+				]);
+				const result = JSON.parse(stdout) as {
+					animationName: string;
+					durationMs: number;
+					fps: number;
+					frameCount: number;
+					format: string;
+					height: number;
+					lossless: boolean;
+					outputPath: string;
+					quality?: number;
+					width: number;
+				};
+				const decoded = await decodeAnimation(await readFile(outputPath), format);
+
+				expect(result).toMatchObject({
+					animationName: "pulse",
+					durationMs: 996,
+					fps: 12,
+					format,
+					frameCount: 12,
+					height: 64,
+					lossless: true,
+					outputPath,
+					width: 97,
+				});
+				expect(result).not.toHaveProperty("quality");
+				expect(decoded.frameCount).toBe(result.frameCount);
+				expect(decoded.height).toBe(result.height);
+				expect(decoded.width).toBe(result.width);
+			} finally {
+				await rm(tempDirectory, { force: true, recursive: true });
+			}
+		});
+	},
+);
 
 test("packed package CLI maps lossy WebP flags through to the encoder", async () => {
 	const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-cli-lossy-webp-"));
