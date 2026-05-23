@@ -7,14 +7,19 @@ Render a Spine JSON animation to an APNG file from Node.js or the command line.
 ```ts
 import { renderSpineToApng } from "spine2img";
 
-await renderSpineToApng({
+const result = await renderSpineToApng({
 	animationName: "pulse",
 	skeletonPath: "fixtures/tracer-bullet/box.json",
 	atlasPath: "fixtures/tracer-bullet/box.atlas",
 	outputPath: "out/box.apng",
-	skinName: "default",
+	fps: 24,
 });
+
+console.log(result.fps); // 24
+console.log(result.frameCount); // structured metadata for automation
 ```
+
+When `fps` is omitted, rendering defaults to `30`.
 
 ## CLI
 
@@ -22,7 +27,17 @@ await renderSpineToApng({
 spine2img render fixtures/tracer-bullet/box.json out/box.apng \
   --atlas fixtures/tracer-bullet/box.atlas \
   --animation pulse \
-  --skin default
+  --fps 24
+```
+
+For automation, ask the CLI for the same structured result metadata as JSON:
+
+```bash
+spine2img render fixtures/tracer-bullet/box.json out/box.apng --json
+```
+
+```json
+{ "format": "apng", "outputPath": "out/box.apng", "animationName": "pulse", "fps": 30 }
 ```
 
 ## Development

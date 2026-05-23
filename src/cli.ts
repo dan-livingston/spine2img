@@ -18,6 +18,7 @@ export function createCli(): Command {
 				)
 				.option("--animation <animation>", "exact animation name to render")
 				.option("--fps <fps>", "frames per second", Number)
+				.option("--json", "print structured result metadata as JSON")
 				.option("--skin <skin>", "exact skin name to apply")
 				.action(async (skeleton, output, options) => {
 					const result = await renderSpineToApng({
@@ -28,6 +29,11 @@ export function createCli(): Command {
 						skinName: options.skin,
 						fps: options.fps,
 					});
+
+					if (options.json) {
+						console.log(JSON.stringify(result));
+						return;
+					}
 
 					console.log(
 						`Rendered ${result.animationName} to ${result.outputPath} (${result.width}x${result.height}, ${result.frameCount} frames @ ${result.fps} fps).`,

@@ -35,6 +35,8 @@ test("built package API renders the fixture to APNG", async () => {
 
 		expect(result).toMatchObject({
 			animationName: "pulse",
+			durationMs: 990,
+			fps: 30,
 			format: "apng",
 			frameCount: 30,
 			height: 64,
@@ -45,6 +47,32 @@ test("built package API renders the fixture to APNG", async () => {
 			height: 64,
 			width: 97,
 		});
+	} finally {
+		await rm(tempDirectory, { force: true, recursive: true });
+	}
+});
+
+test("built package API applies explicit fps to sampling and metadata", async () => {
+	const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-api-fps-"));
+
+	try {
+		const outputPath = path.join(tempDirectory, "api-fps.apng");
+		const packageApi = await import(
+			pathToFileURL(path.join(rootDirectory, "dist", "index.mjs")).href
+		);
+		const result = await packageApi.renderSpineToApng({
+			fps: 12,
+			outputPath,
+			skeletonPath: fixtureSkeletonPath,
+		});
+		const decoded = decodeApng(await readFile(outputPath));
+
+		expect(result).toMatchObject({
+			durationMs: 996,
+			fps: 12,
+			frameCount: 12,
+		});
+		expect(decoded.frameCount).toBe(result.frameCount);
 	} finally {
 		await rm(tempDirectory, { force: true, recursive: true });
 	}
@@ -120,6 +148,56 @@ test("built package CLI renders the same fixture", async () => {
 			height: 64,
 			width: 97,
 		});
+	} finally {
+		await rm(tempDirectory, { force: true, recursive: true });
+	}
+});
+
+test("built package CLI can print structured result metadata as JSON", async () => {
+	const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-cli-json-"));
+
+	try {
+		const outputPath = path.join(tempDirectory, "cli-json.apng");
+		const { stdout } = await execFileAsync(
+			"node",
+			[
+				path.join(rootDirectory, "dist", "bin.mjs"),
+				"render",
+				fixtureSkeletonPath,
+				outputPath,
+				"--fps",
+				"12",
+				"--json",
+			],
+			{
+				cwd: rootDirectory,
+			},
+		);
+		const result = JSON.parse(stdout) as {
+			animationName: string;
+			durationMs: number;
+			fps: number;
+			frameCount: number;
+			format: string;
+			height: number;
+			outputPath: string;
+			width: number;
+		};
+		const decoded = decodeApng(await readFile(outputPath));
+
+		expect(result).toMatchObject({
+			animationName: "pulse",
+			durationMs: 996,
+			fps: 12,
+			format: "apng",
+			frameCount: 12,
+			height: 64,
+			outputPath,
+			width: 97,
+		});
+		expect(decoded.frameCount).toBe(result.frameCount);
+		expect(decoded.height).toBe(result.height);
+		expect(decoded.width).toBe(result.width);
 	} finally {
 		await rm(tempDirectory, { force: true, recursive: true });
 	}
