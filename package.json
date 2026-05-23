@@ -1,7 +1,7 @@
 {
 	"name": "spine2img",
 	"version": "0.0.0",
-	"description": "Render Spine JSON animations to APNG from Node.js or the CLI.",
+	"description": "Render Spine JSON animations to APNG or WebP from Node.js or the CLI.",
 	"homepage": "https://github.com/dan-livingston/spine2img#readme",
 	"bugs": {
 		"url": "https://github.com/dan-livingston/spine2img/issues"

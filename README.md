@@ -1,6 +1,6 @@
 # spine2img
 
-Render a Spine JSON animation to an APNG file from Node.js or the command line.
+Render a Spine JSON animation to an APNG or WebP file from Node.js or the command line.
 
 ## API
 
@@ -37,7 +37,9 @@ console.log(webpResult.format); // "webp"
 console.log(webpResult.quality); // 80 when lossy
 ```
 
-When `format` is omitted, the library infers it from `outputPath`: `.webp` writes WebP, while `.png` and `.apng` write APNG. Unrecognized extensions still fall back to `"apng"`. When `fps` is omitted, rendering defaults to `30`. When `width` and `height` are omitted, the output auto-fits the animation bounds. Backgrounds stay transparent unless you pass a hex `backgroundColor`. Existing output files are protected by default; pass `overwrite: true` to replace them intentionally.
+`renderSpine` defaults to lossless output. For WebP, that means animated lossless WebP unless you opt into lossy output with `lossless: false`. Lossy WebP accepts `quality` from `0` to `100`, and defaults to `80` when omitted. `quality` is only valid for lossy WebP.
+
+When `format` is omitted, the library infers it from `outputPath`: `.webp` writes WebP, while `.png` and `.apng` write APNG. Unrecognized extensions still fall back to `"apng"`. An explicit `format` always wins, even when it contradicts the output extension. The render result always includes `lossless`, and includes `quality` only for lossy WebP output. When `fps` is omitted, rendering defaults to `30`. When `width` and `height` are omitted, the output auto-fits the animation bounds. Backgrounds stay transparent unless you pass a hex `backgroundColor`. Existing output files are protected by default; pass `overwrite: true` to replace them intentionally.
 
 Explicit `width`/`height` anchor the animation at the top-left of the canvas: a larger viewport pads the right and bottom, and a smaller viewport crops the right and bottom. The animation is not scaled or centered to fit.
 
@@ -55,7 +57,19 @@ spine2img render fixtures/tracer-bullet/box.json out/box.apng \
   --background '#ffffff'
 ```
 
-The CLI also infers the format from the output extension, and `--format` overrides that inference. For automation, ask the CLI for the same structured result metadata as JSON:
+To render WebP instead, use a `.webp` output path or pass `--format webp`. WebP is lossless by default. Opt into lossy WebP with `--no-lossless`, and optionally set `--quality` from `0` to `100`:
+
+```bash
+spine2img render fixtures/tracer-bullet/box.json out/box.webp \
+  --atlas fixtures/tracer-bullet/box.atlas \
+  --animation pulse \
+  --no-lossless \
+  --quality 80
+```
+
+The CLI infers the format from the output extension: `.webp` writes WebP, while `.png` and `.apng` write APNG. Unrecognized extensions still fall back to APNG. `--format` overrides that inference, even if the extension says something else. `--quality` only applies to lossy WebP, and defaults to `80` when you pass `--no-lossless` without an explicit quality.
+
+For automation, ask the CLI for the same structured result metadata as JSON:
 
 ```bash
 spine2img render fixtures/tracer-bullet/box.json out/box.apng --json
@@ -71,7 +85,20 @@ spine2img render fixtures/tracer-bullet/box.json out/box.apng --json
 }
 ```
 
-Without `--overwrite`, the CLI fails if `out/box.apng` already exists.
+For lossy WebP output, the JSON result also includes `quality`:
+
+```json
+{
+	"format": "webp",
+	"outputPath": "out/box.webp",
+	"animationName": "pulse",
+	"fps": 30,
+	"lossless": false,
+	"quality": 80
+}
+```
+
+Without `--overwrite`, the CLI fails if the output path already exists.
 
 ## Development
 
