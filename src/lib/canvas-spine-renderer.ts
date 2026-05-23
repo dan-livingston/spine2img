@@ -1,4 +1,3 @@
-import type { AnimatedImageEncoder, EncodeAnimatedImageOptions } from "#/lib/animation-encoder.ts";
 import type {
 	Bounds,
 	LoadedScene,
@@ -7,7 +6,13 @@ import type {
 	Viewport,
 } from "#/lib/renderer-backend.ts";
 
-import { resolveSpineInputs } from "#/lib/resolve-spine-inputs.ts";
+import {
+	SpineInputResolutionError,
+	SpineSelectionError,
+	type SpineInputAssetType,
+	type SpineSelectionType,
+} from "#/lib/errors.ts";
+import { isMissingFileError, isUnreadableFileError } from "#/lib/node-errors.ts";
 import { toArrayBuffer } from "#/lib/to-array-buffer.ts";
 import {
 	AnimationState,
@@ -22,131 +27,13 @@ import {
 	Vector2,
 } from "@esotericsoftware/spine-canvas";
 import { createCanvas, loadImage } from "@napi-rs/canvas";
-import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
-import UPNG from "upng-js";
-
-import {
-	OutputCollisionError,
-	SpineInputResolutionError,
-	SpineSelectionError,
-	type SpineInputAssetType,
-	type SpineSelectionType,
-} from "./lib/errors.ts";
-
-const DEFAULT_FPS = 30;
-
-export type OutputFormat = "apng";
-
-export interface RenderSpineOptions {
-	animationName?: string;
-	atlasPath?: string;
-	backgroundColor?: string;
-	fps?: number;
-	format?: OutputFormat;
-	height?: number;
-	outputPath: string;
-	overwrite?: boolean;
-	skeletonPath: string;
-	skinName?: string;
-	width?: number;
-}
-
-export interface RenderSpineResult<TFormat extends OutputFormat = OutputFormat> {
-	animationName: string;
-	atlasPath: string;
-	durationMs: number;
-	format: TFormat;
-	fps: number;
-	frameCount: number;
-	height: number;
-	outputPath: string;
-	skeletonPath: string;
-	skinName?: string;
-	width: number;
-}
 
 interface CanvasSceneHandle {
 	atlas: TextureAtlas;
 	skeletonData: Skeleton["data"];
 	skinName?: string;
-}
-
-export async function renderSpine(options: RenderSpineOptions): Promise<RenderSpineResult<"apng">> {
-	const fps = options.fps ?? DEFAULT_FPS;
-
-	if (!Number.isFinite(fps) || fps <= 0) {
-		throw new Error(`fps must be a positive number. Received ${fps}.`);
-	}
-
-	const backgroundColor = normalizeBackgroundColor(options.backgroundColor);
-	const explicitWidth = validateExplicitDimension("width", options.width);
-	const explicitHeight = validateExplicitDimension("height", options.height);
-	const format = options.format ?? "apng";
-
-	if (format !== "apng") {
-		return assertNever(format);
-	}
-
-	const inputs = resolveSpineInputs({
-		atlasPath: options.atlasPath,
-		skeletonPath: options.skeletonPath,
-	});
-	const skeletonPath = inputs.skeletonPath;
-	const atlasPath = inputs.atlasPath;
-	const outputPath = path.resolve(options.outputPath);
-	const overwrite = options.overwrite ?? false;
-
-	await assertOutputWritable(outputPath, overwrite);
-
-	const scene = await canvasRenderer.loadScene({
-		animationName: options.animationName,
-		atlasPath,
-		skeletonPath,
-		skinName: options.skinName,
-	});
-
-	try {
-		const samples = createSamples(scene.animationDurationSeconds, fps);
-		const bounds = canvasRenderer.measureBounds(scene, samples);
-		const viewport: Viewport = {
-			backgroundColor,
-			height: explicitHeight ?? bounds.height,
-			width: explicitWidth ?? bounds.width,
-		};
-		const frames = canvasRenderer.renderFrames(scene, samples, bounds, viewport);
-		const encoded = apngEncoder.encode({
-			delaysMs: samples.map((sample) => sample.delayMs),
-			frames,
-			height: viewport.height,
-			width: viewport.width,
-		});
-
-		await mkdir(path.dirname(outputPath), { recursive: true });
-		await writeOutputFile(outputPath, encoded, overwrite);
-
-		return {
-			animationName: scene.animationName,
-			atlasPath,
-			durationMs: samples.reduce((total, sample) => total + sample.delayMs, 0),
-			format,
-			fps,
-			frameCount: frames.length,
-			height: viewport.height,
-			outputPath,
-			skeletonPath,
-			skinName: scene.skinName,
-			width: viewport.width,
-		};
-	} finally {
-		canvasRenderer.disposeScene(scene);
-	}
-}
-
-export function renderSpineToApng(
-	options: Omit<RenderSpineOptions, "format">,
-): Promise<RenderSpineResult<"apng">> {
-	return renderSpine({ ...options, format: "apng" });
 }
 
 class CanvasSpineRenderer implements RendererBackend<CanvasSceneHandle> {
@@ -260,68 +147,6 @@ class CanvasSpineRenderer implements RendererBackend<CanvasSceneHandle> {
 	}
 }
 
-class ApngEncoder implements AnimatedImageEncoder<"apng"> {
-	readonly format = "apng";
-
-	encode(options: EncodeAnimatedImageOptions): Uint8Array {
-		return new Uint8Array(
-			UPNG.encode(
-				options.frames,
-				options.width,
-				options.height,
-				0,
-				options.frames.length > 1 ? options.delaysMs : undefined,
-			),
-		);
-	}
-}
-
-const canvasRenderer = new CanvasSpineRenderer();
-const apngEncoder = new ApngEncoder();
-
-async function assertOutputWritable(outputPath: string, overwrite: boolean): Promise<void> {
-	if (overwrite) {
-		return;
-	}
-
-	try {
-		await access(outputPath);
-	} catch (error) {
-		if (isMissingFileError(error)) {
-			return;
-		}
-
-		throw error;
-	}
-
-	throw new OutputCollisionError({
-		code: "existing-output",
-		message: `Output already exists at ${outputPath}.`,
-		outputPath,
-	});
-}
-
-async function writeOutputFile(
-	outputPath: string,
-	encoded: Uint8Array,
-	overwrite: boolean,
-): Promise<void> {
-	try {
-		await writeFile(outputPath, encoded, { flag: overwrite ? "w" : "wx" });
-	} catch (error) {
-		if (isNodeErrorWithCode(error, "EEXIST")) {
-			throw new OutputCollisionError({
-				cause: error,
-				code: "existing-output",
-				message: `Output already exists at ${outputPath}.`,
-				outputPath,
-			});
-		}
-
-		throw error;
-	}
-}
-
 async function loadTextureAtlas(atlasPath: string): Promise<TextureAtlas> {
 	let atlasSource: string;
 
@@ -372,58 +197,6 @@ async function readTextAsset(assetType: "skeleton", assetPath: string): Promise<
 	} catch (error) {
 		throw toAssetReadError(assetType, assetPath, error);
 	}
-}
-
-function createSamples(durationSeconds: number, fps: number): Sample[] {
-	const frameDelayMs = Math.max(1, Math.round(1000 / fps));
-	const sampleCount = Math.max(1, Math.ceil(durationSeconds * fps));
-
-	return Array.from({ length: sampleCount }, (_, index) => ({
-		delayMs: frameDelayMs,
-		timeSeconds: sampleCount === 1 ? 0 : Math.min(index / fps, durationSeconds),
-	}));
-}
-
-function validateExplicitDimension(
-	name: "height" | "width",
-	value: number | undefined,
-): number | undefined {
-	if (value === undefined) {
-		return undefined;
-	}
-
-	if (!Number.isInteger(value) || value <= 0) {
-		throw new Error(`${name} must be a positive integer. Received ${value}.`);
-	}
-
-	return value;
-}
-
-function normalizeBackgroundColor(backgroundColor: string | undefined): string | undefined {
-	if (backgroundColor === undefined) {
-		return undefined;
-	}
-
-	const normalized = backgroundColor.trim();
-	const hexMatch = /^#(?<hex>[0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.exec(normalized);
-
-	if (!hexMatch?.groups?.hex) {
-		throw new Error(
-			`backgroundColor must be a hex color like #rgb, #rgba, #rrggbb, or #rrggbbaa. Received ${backgroundColor}.`,
-		);
-	}
-
-	const hex = hexMatch.groups.hex;
-	const expanded =
-		hex.length === 3 || hex.length === 4
-			? Array.from(hex, (character) => `${character}${character}`).join("")
-			: hex;
-	const red = Number.parseInt(expanded.slice(0, 2), 16);
-	const green = Number.parseInt(expanded.slice(2, 4), 16);
-	const blue = Number.parseInt(expanded.slice(4, 6), 16);
-	const alphaByte = expanded.length === 8 ? Number.parseInt(expanded.slice(6, 8), 16) : 255;
-
-	return `rgba(${red}, ${green}, ${blue}, ${Number((alphaByte / 255).toFixed(3))})`;
 }
 
 function poseSkeleton(scene: LoadedScene<CanvasSceneHandle>, timeSeconds: number): Skeleton {
@@ -612,18 +385,4 @@ function isAtlasRegionMismatchError(error: unknown): boolean {
 	return error instanceof Error && error.message.includes("Region not found in atlas");
 }
 
-function isMissingFileError(error: unknown): error is NodeJS.ErrnoException {
-	return isNodeErrorWithCode(error, "ENOENT");
-}
-
-function isUnreadableFileError(error: unknown): error is NodeJS.ErrnoException {
-	return isNodeErrorWithCode(error, "EACCES") || isNodeErrorWithCode(error, "EPERM");
-}
-
-function isNodeErrorWithCode(error: unknown, code: string): error is NodeJS.ErrnoException {
-	return error instanceof Error && "code" in error && error.code === code;
-}
-
-function assertNever(value: never): never {
-	throw new Error(`Unsupported output format: ${String(value)}.`);
-}
+export const canvasSpineRenderer = new CanvasSpineRenderer();

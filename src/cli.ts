@@ -1,4 +1,4 @@
-import { renderSpine } from "#/render-spine-to-apng.ts";
+import { renderSpine } from "#/render-spine.ts";
 import { Command } from "commander";
 
 export function createCli(): Command {

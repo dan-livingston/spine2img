@@ -19,4 +19,4 @@ export {
 	renderSpineToApng,
 	type RenderSpineOptions,
 	type RenderSpineResult,
-} from "#/render-spine-to-apng.ts";
+} from "#/render-spine.ts";

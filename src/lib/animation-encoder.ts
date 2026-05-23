@@ -7,5 +7,5 @@ export interface EncodeAnimatedImageOptions {
 
 export interface AnimatedImageEncoder<TFormat extends string = string> {
 	readonly format: TFormat;
-	encode(options: EncodeAnimatedImageOptions): Uint8Array;
+	encode(options: EncodeAnimatedImageOptions): Promise<Uint8Array>;
 }
