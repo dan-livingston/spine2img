@@ -17,6 +17,25 @@ export default defineConfig({
 			typeCheck: true,
 		},
 	},
+	test: {
+		projects: [
+			{
+				extends: true,
+				test: {
+					name: "unit",
+					include: ["src/**/*.test.ts"],
+				},
+			},
+			{
+				extends: true,
+				test: {
+					name: "e2e",
+					include: ["e2e/**/*.test.ts"],
+					globalSetup: ["./e2e/global-setup.ts"],
+				},
+			},
+		],
+	},
 	fmt: {
 		tabWidth: 4,
 		useTabs: true,
