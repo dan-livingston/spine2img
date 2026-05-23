@@ -16,13 +16,17 @@ export function createCli(): Command {
 					"--atlas <atlas>",
 					"path to the Spine atlas (defaults beside the skeleton; relative paths resolve from the current directory)",
 				)
+				.option("--animation <animation>", "exact animation name to render")
 				.option("--fps <fps>", "frames per second", Number)
+				.option("--skin <skin>", "exact skin name to apply")
 				.action(async (skeleton, output, options) => {
 					const result = await renderSpineToApng({
-						atlasPath: options.atlas,
-						fps: options.fps,
-						outputPath: output,
 						skeletonPath: skeleton,
+						outputPath: output,
+						atlasPath: options.atlas,
+						animationName: options.animation,
+						skinName: options.skin,
+						fps: options.fps,
 					});
 
 					console.log(

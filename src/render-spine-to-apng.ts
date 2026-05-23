@@ -17,15 +17,22 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import UPNG from "upng-js";
 
-import { SpineInputResolutionError, type SpineInputAssetType } from "./lib/errors.ts";
+import {
+	SpineInputResolutionError,
+	SpineSelectionError,
+	type SpineInputAssetType,
+	type SpineSelectionType,
+} from "./lib/errors.ts";
 
 const DEFAULT_FPS = 30;
 
 export interface RenderSpineToApngOptions {
+	animationName?: string;
 	skeletonPath: string;
 	atlasPath?: string;
 	outputPath: string;
 	fps?: number;
+	skinName?: string;
 }
 
 export interface RenderSpineToApngResult {
@@ -39,12 +46,14 @@ export interface RenderSpineToApngResult {
 	width: number;
 	height: number;
 	durationMs: number;
+	skinName?: string;
 }
 
 interface LoadedScene {
 	animationName: string;
 	animationDurationSeconds: number;
 	atlas: TextureAtlas;
+	skinName?: string;
 	skeletonData: Skeleton["data"];
 }
 
@@ -79,7 +88,10 @@ export async function renderSpineToApng(
 	const atlasPath = inputs.atlasPath;
 	const outputPath = path.resolve(options.outputPath);
 
-	const scene = await loadScene(skeletonPath, atlasPath);
+	const scene = await loadScene(skeletonPath, atlasPath, {
+		animationName: options.animationName,
+		skinName: options.skinName,
+	});
 
 	try {
 		const samples = createSamples(scene.animationDurationSeconds, fps);
@@ -106,6 +118,7 @@ export async function renderSpineToApng(
 			height: bounds.height,
 			outputPath,
 			skeletonPath,
+			skinName: scene.skinName,
 			width: bounds.width,
 		};
 	} finally {
@@ -113,7 +126,11 @@ export async function renderSpineToApng(
 	}
 }
 
-async function loadScene(skeletonPath: string, atlasPath: string): Promise<LoadedScene> {
+async function loadScene(
+	skeletonPath: string,
+	atlasPath: string,
+	options: Pick<RenderSpineToApngOptions, "animationName" | "skinName">,
+): Promise<LoadedScene> {
 	// Read first, because it's cheap and fails fast.
 	const skeletonSource = await readTextAsset("skeleton", skeletonPath);
 	const atlas = await loadTextureAtlas(atlasPath);
@@ -129,19 +146,28 @@ async function loadScene(skeletonPath: string, atlasPath: string): Promise<Loade
 		throw toSkeletonLoadError(skeletonPath, atlasPath, error);
 	}
 
-	const animation = skeletonData.animations.at(0);
+	try {
+		const animation = selectAnimation(skeletonPath, skeletonData, options.animationName);
+		const skinName = options.skinName
+			? selectNamedEntry({
+					availableNames: skeletonData.skins.map((skin) => skin.name),
+					requestedName: options.skinName,
+					selectionType: "skin",
+					skeletonPath,
+				})
+			: undefined;
 
-	if (!animation) {
+		return {
+			animationDurationSeconds: animation.duration,
+			animationName: animation.name,
+			atlas,
+			skeletonData,
+			skinName,
+		};
+	} catch (error) {
 		atlas.dispose();
-		throw new Error(`No animations found in ${skeletonPath}.`);
+		throw error;
 	}
-
-	return {
-		animationDurationSeconds: animation.duration,
-		animationName: animation.name,
-		atlas,
-		skeletonData,
-	};
 }
 
 async function loadTextureAtlas(atlasPath: string): Promise<TextureAtlas> {
@@ -253,11 +279,16 @@ function renderFrames(scene: LoadedScene, samples: Sample[], bounds: Bounds): Ar
 function poseSkeleton(scene: LoadedScene, timeSeconds: number): Skeleton {
 	const skeleton = new Skeleton(scene.skeletonData);
 	const animationState = new AnimationState(new AnimationStateData(scene.skeletonData));
+	const selectedSkin = scene.skinName
+		? scene.skeletonData.findSkin(scene.skinName)
+		: scene.skeletonData.defaultSkin;
 
 	skeleton.scaleY = -1;
 
-	if (scene.skeletonData.defaultSkin) {
-		skeleton.setSkin(scene.skeletonData.defaultSkin);
+	// scene.skinName was already validated against skeletonData.skins in loadScene,
+	// and we read from that same skeletonData here, so findSkin cannot miss.
+	if (selectedSkin) {
+		skeleton.setSkin(selectedSkin);
 	}
 
 	animationState.setAnimation(0, scene.animationName, false);
@@ -268,6 +299,60 @@ function poseSkeleton(scene: LoadedScene, timeSeconds: number): Skeleton {
 	skeleton.updateWorldTransform(Physics.update);
 
 	return skeleton;
+}
+
+function selectAnimation(
+	skeletonPath: string,
+	skeletonData: Skeleton["data"],
+	animationName?: string,
+) {
+	const animation = animationName
+		? skeletonData.findAnimation(animationName)
+		: skeletonData.animations.at(0);
+
+	if (!animation) {
+		if (!animationName) {
+			throw new Error(`No animations found in ${skeletonPath}.`);
+		}
+
+		throwSelectionError({
+			availableNames: skeletonData.animations.map((candidate) => candidate.name),
+			requestedName: animationName,
+			selectionType: "animation",
+			skeletonPath,
+		});
+	}
+
+	return animation;
+}
+
+function selectNamedEntry(options: {
+	availableNames: string[];
+	requestedName: string;
+	selectionType: SpineSelectionType;
+	skeletonPath: string;
+}): string {
+	if (options.availableNames.includes(options.requestedName)) {
+		return options.requestedName;
+	}
+
+	throwSelectionError(options);
+}
+
+function throwSelectionError(options: {
+	availableNames: string[];
+	requestedName: string;
+	selectionType: SpineSelectionType;
+	skeletonPath: string;
+}): never {
+	throw new SpineSelectionError({
+		availableNames: options.availableNames,
+		code: "missing-selection",
+		message: `Unknown ${options.selectionType} "${options.requestedName}" in ${options.skeletonPath}.`,
+		requestedName: options.requestedName,
+		selectionType: options.selectionType,
+		skeletonPath: options.skeletonPath,
+	});
 }
 
 function toAssetReadError(

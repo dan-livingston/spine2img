@@ -6,6 +6,10 @@ export type SpineInputResolutionErrorCode =
 	| "missing-asset"
 	| "unreadable-asset";
 
+export type SpineSelectionType = "animation" | "skin";
+
+export type SpineSelectionErrorCode = "missing-selection";
+
 export interface SpineInputResolutionErrorOptions {
 	assetPath: string;
 	assetType: SpineInputAssetType;
@@ -13,6 +17,16 @@ export interface SpineInputResolutionErrorOptions {
 	code: SpineInputResolutionErrorCode;
 	message: string;
 	relatedPath?: string;
+}
+
+export interface SpineSelectionErrorOptions {
+	availableNames: string[];
+	cause?: unknown;
+	code: SpineSelectionErrorCode;
+	message: string;
+	requestedName: string;
+	selectionType: SpineSelectionType;
+	skeletonPath: string;
 }
 
 export class SpineInputResolutionError extends Error {
@@ -32,6 +46,25 @@ export class SpineInputResolutionError extends Error {
 	}
 }
 
+export class SpineSelectionError extends Error {
+	readonly availableNames: string[];
+	declare readonly cause: unknown;
+	readonly code: SpineSelectionErrorCode;
+	readonly requestedName: string;
+	readonly selectionType: SpineSelectionType;
+	readonly skeletonPath: string;
+
+	constructor(options: SpineSelectionErrorOptions) {
+		super(options.message, { cause: options.cause });
+		this.name = "SpineSelectionError";
+		this.availableNames = options.availableNames;
+		this.code = options.code;
+		this.requestedName = options.requestedName;
+		this.selectionType = options.selectionType;
+		this.skeletonPath = options.skeletonPath;
+	}
+}
+
 export function formatRenderErrorForCli(error: unknown): string {
 	if (error instanceof SpineInputResolutionError) {
 		switch (error.code) {
@@ -46,6 +79,15 @@ export function formatRenderErrorForCli(error: unknown): string {
 		}
 	}
 
+	if (error instanceof SpineSelectionError) {
+		return [
+			`Unknown ${error.selectionType} "${error.requestedName}" in ${error.skeletonPath}.`,
+			`Available ${error.selectionType}s: ${
+				error.availableNames.length > 0 ? error.availableNames.join(", ") : "(none)"
+			}.`,
+		].join(" ");
+	}
+
 	if (error instanceof Error) {
 		return error.message;
 	}
@@ -55,4 +97,8 @@ export function formatRenderErrorForCli(error: unknown): string {
 
 export function isSpineInputResolutionError(error: unknown): error is SpineInputResolutionError {
 	return error instanceof SpineInputResolutionError;
+}
+
+export function isSpineSelectionError(error: unknown): error is SpineSelectionError {
+	return error instanceof SpineSelectionError;
 }

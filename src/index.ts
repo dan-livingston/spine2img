@@ -1,7 +1,10 @@
 export {
 	SpineInputResolutionError,
+	SpineSelectionError,
 	type SpineInputAssetType,
 	type SpineInputResolutionErrorCode,
+	type SpineSelectionErrorCode,
+	type SpineSelectionType,
 } from "./lib/errors.ts";
 export {
 	renderSpineToApng,
