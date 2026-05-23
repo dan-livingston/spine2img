@@ -1,23 +1,29 @@
-# vite-plus-starter
+# spine2img
 
-A starter for creating a Vite Plus project.
+Render a Spine JSON animation to an APNG file from Node.js or the command line.
+
+## API
+
+```ts
+import { renderSpineToApng } from "spine2img";
+
+await renderSpineToApng({
+	skeletonPath: "fixtures/tracer-bullet/box.json",
+	atlasPath: "fixtures/tracer-bullet/box.atlas",
+	outputPath: "out/box.apng",
+});
+```
+
+## CLI
+
+```bash
+spine2img render fixtures/tracer-bullet/box.json fixtures/tracer-bullet/box.atlas out/box.apng
+```
 
 ## Development
 
-- Install dependencies:
-
 ```bash
-vp install
-```
-
-- Run the unit tests:
-
-```bash
-vp test
-```
-
-- Build the library:
-
-```bash
-vp pack
+pnpm test
+pnpm build
+pnpm check
 ```

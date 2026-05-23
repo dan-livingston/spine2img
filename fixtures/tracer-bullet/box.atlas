@@ -1,0 +1,7 @@
+box.png
+size: 64,64
+format: RGBA8888
+filter: Linear,Linear
+repeat: none
+box
+bounds: 0,0,64,64

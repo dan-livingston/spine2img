@@ -1,3 +1,5 @@
-export function fn() {
-  return "Hello, tsdown!";
-}
+export {
+	renderSpineToApng,
+	type RenderSpineToApngOptions,
+	type RenderSpineToApngResult,
+} from "#/render-spine-to-apng.ts";
