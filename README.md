@@ -13,13 +13,18 @@ const result = await renderSpineToApng({
 	atlasPath: "fixtures/tracer-bullet/box.atlas",
 	outputPath: "out/box.apng",
 	fps: 24,
+	width: 120,
+	height: 80,
+	backgroundColor: "#ffffff",
 });
 
 console.log(result.fps); // 24
 console.log(result.frameCount); // structured metadata for automation
 ```
 
-When `fps` is omitted, rendering defaults to `30`.
+When `fps` is omitted, rendering defaults to `30`. When `width` and `height` are omitted, the output auto-fits the animation bounds. Backgrounds stay transparent unless you pass a hex `backgroundColor`.
+
+Explicit `width`/`height` anchor the animation at the top-left of the canvas: a larger viewport pads the right and bottom, and a smaller viewport crops the right and bottom. The animation is not scaled or centered to fit.
 
 ## CLI
 
@@ -27,7 +32,10 @@ When `fps` is omitted, rendering defaults to `30`.
 spine2img render fixtures/tracer-bullet/box.json out/box.apng \
   --atlas fixtures/tracer-bullet/box.atlas \
   --animation pulse \
-  --fps 24
+  --fps 24 \
+  --width 120 \
+  --height 80 \
+  --background '#ffffff'
 ```
 
 For automation, ask the CLI for the same structured result metadata as JSON:

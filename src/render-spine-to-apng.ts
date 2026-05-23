@@ -32,6 +32,9 @@ export interface RenderSpineToApngOptions {
 	atlasPath?: string;
 	outputPath: string;
 	fps?: number;
+	width?: number;
+	height?: number;
+	backgroundColor?: string;
 	skinName?: string;
 }
 
@@ -71,6 +74,12 @@ interface Bounds {
 	width: number;
 }
 
+interface Viewport {
+	backgroundColor?: string;
+	height: number;
+	width: number;
+}
+
 export async function renderSpineToApng(
 	options: RenderSpineToApngOptions,
 ): Promise<RenderSpineToApngResult> {
@@ -79,6 +88,10 @@ export async function renderSpineToApng(
 	if (!Number.isFinite(fps) || fps <= 0) {
 		throw new Error(`fps must be a positive number. Received ${fps}.`);
 	}
+
+	const backgroundColor = normalizeBackgroundColor(options.backgroundColor);
+	const explicitWidth = validateExplicitDimension("width", options.width);
+	const explicitHeight = validateExplicitDimension("height", options.height);
 
 	const inputs = resolveSpineInputs({
 		atlasPath: options.atlasPath,
@@ -96,11 +109,16 @@ export async function renderSpineToApng(
 	try {
 		const samples = createSamples(scene.animationDurationSeconds, fps);
 		const bounds = measureAnimationBounds(scene, samples);
-		const frames = renderFrames(scene, samples, bounds);
+		const viewport: Viewport = {
+			backgroundColor,
+			height: explicitHeight ?? bounds.height,
+			width: explicitWidth ?? bounds.width,
+		};
+		const frames = renderFrames(scene, samples, bounds, viewport);
 		const encoded = UPNG.encode(
 			frames,
-			bounds.width,
-			bounds.height,
+			viewport.width,
+			viewport.height,
 			0,
 			frames.length > 1 ? samples.map((sample) => sample.delayMs) : undefined,
 		);
@@ -115,11 +133,11 @@ export async function renderSpineToApng(
 			format: "apng",
 			fps,
 			frameCount: frames.length,
-			height: bounds.height,
+			height: viewport.height,
 			outputPath,
 			skeletonPath,
 			skinName: scene.skinName,
-			width: bounds.width,
+			width: viewport.width,
 		};
 	} finally {
 		scene.atlas.dispose();
@@ -260,13 +278,64 @@ function measureAnimationBounds(scene: LoadedScene, samples: Sample[]): Bounds {
 	};
 }
 
-function renderFrames(scene: LoadedScene, samples: Sample[], bounds: Bounds): ArrayBuffer[] {
+function validateExplicitDimension(
+	name: "height" | "width",
+	value: number | undefined,
+): number | undefined {
+	if (value === undefined) {
+		return undefined;
+	}
+
+	if (!Number.isInteger(value) || value <= 0) {
+		throw new Error(`${name} must be a positive integer. Received ${value}.`);
+	}
+
+	return value;
+}
+
+function normalizeBackgroundColor(backgroundColor: string | undefined): string | undefined {
+	if (backgroundColor === undefined) {
+		return undefined;
+	}
+
+	const normalized = backgroundColor.trim();
+	const hexMatch = /^#(?<hex>[0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.exec(normalized);
+
+	if (!hexMatch?.groups?.hex) {
+		throw new Error(
+			`backgroundColor must be a hex color like #rgb, #rgba, #rrggbb, or #rrggbbaa. Received ${backgroundColor}.`,
+		);
+	}
+
+	const hex = hexMatch.groups.hex;
+	const expanded =
+		hex.length === 3 || hex.length === 4
+			? Array.from(hex, (character) => `${character}${character}`).join("")
+			: hex;
+	const red = Number.parseInt(expanded.slice(0, 2), 16);
+	const green = Number.parseInt(expanded.slice(2, 4), 16);
+	const blue = Number.parseInt(expanded.slice(4, 6), 16);
+	const alphaByte = expanded.length === 8 ? Number.parseInt(expanded.slice(6, 8), 16) : 255;
+
+	return `rgba(${red}, ${green}, ${blue}, ${Number((alphaByte / 255).toFixed(3))})`;
+}
+
+function renderFrames(
+	scene: LoadedScene,
+	samples: Sample[],
+	bounds: Bounds,
+	viewport: Viewport,
+): ArrayBuffer[] {
 	return samples.map((sample) => {
 		const skeleton = poseSkeleton(scene, sample.timeSeconds);
-		const canvas = createCanvas(bounds.width, bounds.height);
+		const canvas = createCanvas(viewport.width, viewport.height);
 		const context = canvas.getContext("2d");
 
-		context.clearRect(0, 0, bounds.width, bounds.height);
+		if (viewport.backgroundColor) {
+			context.fillStyle = viewport.backgroundColor;
+			context.fillRect(0, 0, viewport.width, viewport.height);
+		}
+
 		context.translate(-bounds.minX, -bounds.minY);
 
 		const renderer = new SkeletonRenderer(context);

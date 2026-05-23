@@ -78,6 +78,71 @@ test("built package API applies explicit fps to sampling and metadata", async ()
 	}
 });
 
+test("built package API can override viewport size while keeping transparency by default", async () => {
+	const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-api-viewport-"));
+
+	try {
+		const outputPath = path.join(tempDirectory, "api-viewport.apng");
+		const packageApi = await import(
+			pathToFileURL(path.join(rootDirectory, "dist", "index.mjs")).href
+		);
+		const result = await packageApi.renderSpineToApng({
+			height: 80,
+			outputPath,
+			skeletonPath: fixtureSkeletonPath,
+			width: 120,
+		});
+		const decoded = decodeApngFrames(await readFile(outputPath));
+
+		expect(result).toMatchObject({
+			height: 80,
+			width: 120,
+		});
+		expect(decoded.height).toBe(result.height);
+		expect(decoded.width).toBe(result.width);
+		expect(readPixel(decoded.frames[0], decoded.width, 32, 32)[3]).toBeGreaterThan(0);
+		expect(
+			readPixel(decoded.frames[0], decoded.width, decoded.width - 1, decoded.height - 1),
+		).toEqual([0, 0, 0, 0]);
+	} finally {
+		await rm(tempDirectory, { force: true, recursive: true });
+	}
+});
+
+test("built package API validates viewport options before loading the scene", async () => {
+	const packageApi = await import(
+		pathToFileURL(path.join(rootDirectory, "dist", "index.mjs")).href
+	);
+	const unreadableSkeletonPath = path.join(os.tmpdir(), "spine2img-missing", "box.json");
+	const unusedOutputPath = path.join(os.tmpdir(), "spine2img-never-written.apng");
+
+	await expect(
+		packageApi.renderSpineToApng({
+			outputPath: unusedOutputPath,
+			skeletonPath: unreadableSkeletonPath,
+			width: -5,
+		}),
+	).rejects.toThrow("width must be a positive integer. Received -5.");
+
+	await expect(
+		packageApi.renderSpineToApng({
+			height: 80.5,
+			outputPath: unusedOutputPath,
+			skeletonPath: unreadableSkeletonPath,
+		}),
+	).rejects.toThrow("height must be a positive integer. Received 80.5.");
+
+	await expect(
+		packageApi.renderSpineToApng({
+			backgroundColor: "red",
+			outputPath: unusedOutputPath,
+			skeletonPath: unreadableSkeletonPath,
+		}),
+	).rejects.toThrow(
+		"backgroundColor must be a hex color like #rgb, #rgba, #rrggbb, or #rrggbbaa. Received red.",
+	);
+});
+
 test("built package API renders a selected animation and skin", async () => {
 	const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-api-selection-"));
 
@@ -198,6 +263,49 @@ test("built package CLI can print structured result metadata as JSON", async () 
 		expect(decoded.frameCount).toBe(result.frameCount);
 		expect(decoded.height).toBe(result.height);
 		expect(decoded.width).toBe(result.width);
+	} finally {
+		await rm(tempDirectory, { force: true, recursive: true });
+	}
+});
+
+test("built package CLI can apply explicit size and background color", async () => {
+	const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-cli-background-"));
+
+	try {
+		const outputPath = path.join(tempDirectory, "cli-background.apng");
+		const { stdout } = await execFileAsync(
+			"node",
+			[
+				path.join(rootDirectory, "dist", "bin.mjs"),
+				"render",
+				fixtureSkeletonPath,
+				outputPath,
+				"--width",
+				"120",
+				"--height",
+				"80",
+				"--background",
+				"#336699",
+				"--json",
+			],
+			{
+				cwd: rootDirectory,
+			},
+		);
+		const result = JSON.parse(stdout) as {
+			height: number;
+			width: number;
+		};
+		const decoded = decodeApngFrames(await readFile(outputPath));
+
+		expect(result).toMatchObject({
+			height: 80,
+			width: 120,
+		});
+		expect(readPixel(decoded.frames[0], decoded.width, 32, 32)[3]).toBeGreaterThan(0);
+		expect(
+			readPixel(decoded.frames[0], decoded.width, decoded.width - 1, decoded.height - 1),
+		).toEqual([51, 102, 153, 255]);
 	} finally {
 		await rm(tempDirectory, { force: true, recursive: true });
 	}
@@ -559,6 +667,32 @@ function decodeApng(file: Uint8Array) {
 		height: decoded.height,
 		width: decoded.width,
 	};
+}
+
+function decodeApngFrames(file: Uint8Array) {
+	const decoded = UPNG.decode(toArrayBuffer(file));
+
+	return {
+		frames: UPNG.toRGBA8(decoded).map((frame) => new Uint8Array(frame)),
+		height: decoded.height,
+		width: decoded.width,
+	};
+}
+
+function readPixel(
+	frame: Uint8Array,
+	width: number,
+	x: number,
+	y: number,
+): [number, number, number, number] {
+	const offset = (y * width + x) * 4;
+
+	return [
+		frame[offset] ?? 0,
+		frame[offset + 1] ?? 0,
+		frame[offset + 2] ?? 0,
+		frame[offset + 3] ?? 0,
+	];
 }
 
 async function createSelectableFixture(tempDirectory: string): Promise<string> {

@@ -17,6 +17,12 @@ export function createCli(): Command {
 					"path to the Spine atlas (defaults beside the skeleton; relative paths resolve from the current directory)",
 				)
 				.option("--animation <animation>", "exact animation name to render")
+				.option("--width <width>", "output width in pixels", Number)
+				.option("--height <height>", "output height in pixels", Number)
+				.option(
+					"--background <color>",
+					"solid background hex color (#rgb, #rgba, #rrggbb, or #rrggbbaa)",
+				)
 				.option("--fps <fps>", "frames per second", Number)
 				.option("--json", "print structured result metadata as JSON")
 				.option("--skin <skin>", "exact skin name to apply")
@@ -27,7 +33,10 @@ export function createCli(): Command {
 						atlasPath: options.atlas,
 						animationName: options.animation,
 						skinName: options.skin,
+						backgroundColor: options.background,
 						fps: options.fps,
+						height: options.height,
+						width: options.width,
 					});
 
 					if (options.json) {
