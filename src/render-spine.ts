@@ -10,6 +10,7 @@ import { resolveAnimatedImageEncoder } from "#/lib/resolve-animated-image-encode
 import { resolveEncodeOptions } from "#/lib/resolve-encode-options.ts";
 import { resolveFormat, type ResolvedOutputFormat } from "#/lib/resolve-format.ts";
 import { resolveSpineInputs } from "#/lib/resolve-spine-inputs.ts";
+import { validateExplicitDimension } from "#/lib/validate-dimension.ts";
 import { access, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -177,19 +178,4 @@ async function writeOutputFile(
 
 		throw error;
 	}
-}
-
-function validateExplicitDimension(
-	name: "height" | "width",
-	value: number | undefined,
-): number | undefined {
-	if (value === undefined) {
-		return undefined;
-	}
-
-	if (!Number.isInteger(value) || value <= 0) {
-		throw new Error(`${name} must be a positive integer. Received ${value}.`);
-	}
-
-	return value;
 }

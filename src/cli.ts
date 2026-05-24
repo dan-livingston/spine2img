@@ -95,6 +95,20 @@ export function createCli(): Command {
 					[],
 				)
 				.option(
+					"--tight",
+					"auto-fit each animation to its own bounds instead of a uniform per-skin canvas",
+				)
+				.option(
+					"--width <width>",
+					"force the output width in pixels for every variation",
+					Number,
+				)
+				.option(
+					"--height <height>",
+					"force the output height in pixels for every variation",
+					Number,
+				)
+				.option(
 					"--background <color>",
 					"solid background hex color (#rgb, #rgba, #rrggbb, or #rrggbbaa)",
 				)
@@ -106,7 +120,10 @@ export function createCli(): Command {
 						atlasPath: options.atlas,
 						backgroundColor: options.background,
 						fps: options.fps,
+						height: options.height,
 						skinNames: options.skin,
+						tight: options.tight,
+						width: options.width,
 						onProgress: (variation) => {
 							console.log(
 								`Rendered ${formatVariationLabel(variation)} to ${variation.outputPath} (${variation.width}x${variation.height}, ${variation.frameCount} frames @ ${variation.fps} fps).`,

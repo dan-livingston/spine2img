@@ -1,18 +1,24 @@
 import type { AnimatedImageEncoder } from "#/lib/animation-encoder.ts";
 import type { OutputFormat } from "#/lib/output-format.ts";
 import type {
+	Bounds,
 	LoadedAssets,
 	RendererBackend,
 	ResolvedVariation,
-	Sample,
 	Viewport,
 } from "#/lib/renderer-backend.ts";
 import type { ResolvedEncodeOptions } from "#/lib/resolve-encode-options.ts";
 import type { RenderSpineResult } from "#/render-spine.ts";
 
+import { createSamples } from "#/lib/create-samples.ts";
+
 export interface RenderVariationOptions {
 	atlasPath: string;
 	backgroundColor?: string;
+	// A precomputed registered canvas (the union of a skin's animation bounds).
+	// When omitted, the variation auto-fits to its own bounds — the single-render
+	// and `--tight` behavior.
+	bounds?: Bounds;
 	encodeOptions: ResolvedEncodeOptions;
 	encoder: AnimatedImageEncoder<OutputFormat>;
 	format: OutputFormat;
@@ -41,7 +47,9 @@ export async function renderVariation<THandle>(
 ): Promise<RenderedVariation> {
 	const { resolved } = options;
 	const samples = createSamples(resolved.animationDurationSeconds, options.fps);
-	const bounds = backend.measureBounds(assets, resolved, samples);
+	// A registered canvas is supplied by the batch path; single-render and `--tight`
+	// fall back to this animation's own bounds.
+	const bounds = options.bounds ?? backend.measureBounds(assets, resolved, samples);
 	const viewport: Viewport = {
 		backgroundColor: options.backgroundColor,
 		height: options.height ?? bounds.height,
@@ -74,14 +82,4 @@ export async function renderVariation<THandle>(
 			...options.encodeOptions,
 		},
 	};
-}
-
-function createSamples(durationSeconds: number, fps: number): Sample[] {
-	const frameDelayMs = Math.max(1, Math.round(1000 / fps));
-	const sampleCount = Math.max(1, Math.ceil(durationSeconds * fps));
-
-	return Array.from({ length: sampleCount }, (_, index) => ({
-		delayMs: frameDelayMs,
-		timeSeconds: sampleCount === 1 ? 0 : Math.min(index / fps, durationSeconds),
-	}));
 }

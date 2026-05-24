@@ -1,15 +1,18 @@
 import type { RenderSpineError } from "#/lib/errors.ts";
 import type { OutputFormat } from "#/lib/output-format.ts";
+import type { ResolvedVariation } from "#/lib/renderer-backend.ts";
 import type { RenderSpineResult } from "#/render-spine.ts";
 
 import { normalizeBackgroundColor } from "#/lib/background-color.ts";
 import { canvasSpineRenderer } from "#/lib/canvas-spine-renderer.ts";
 import { deriveOutputPath } from "#/lib/derive-output-path.ts";
 import { enumerateVariations } from "#/lib/enumerate-variations.ts";
+import { measureRegisteredBounds } from "#/lib/registered-bounds.ts";
 import { renderVariation } from "#/lib/render-variation.ts";
 import { resolveAnimatedImageEncoder } from "#/lib/resolve-animated-image-encoder.ts";
 import { resolveEncodeOptions } from "#/lib/resolve-encode-options.ts";
 import { resolveSpineInputs } from "#/lib/resolve-spine-inputs.ts";
+import { validateExplicitDimension } from "#/lib/validate-dimension.ts";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -19,6 +22,9 @@ export interface RenderSpineVariationsOptions {
 	atlasPath?: string;
 	backgroundColor?: string;
 	fps?: number;
+	// Forces the canvas height uniformly across every output. Overrides both the
+	// registered canvas and `--tight` auto-fit.
+	height?: number;
 	// Invoked after each variation is written, in skeleton-declared order, so a
 	// caller (the CLI) can stream progress as a long batch runs instead of waiting
 	// for the whole run to settle.
@@ -28,6 +34,12 @@ export interface RenderSpineVariationsOptions {
 	// Narrows the run to a subset of skins. Omitted or empty renders the automatic
 	// "all skins" set (named skins, excluding `default` when named skins exist).
 	skinNames?: string[];
+	// Opts out of the registered canvas: each animation auto-fits to its own bounds
+	// (today's single-render behavior) rather than its skin's union bounds.
+	tight?: boolean;
+	// Forces the canvas width uniformly across every output. Overrides both the
+	// registered canvas and `--tight` auto-fit.
+	width?: number;
 }
 
 export interface RenderSpineVariationsResult {
@@ -46,13 +58,28 @@ export interface RenderSpineVariationsResult {
 	succeeded: RenderSpineResult[];
 }
 
+// One resolved variation plus the path it will be written to, grouped by skin so a
+// skin's registered canvas can be measured across all of its animations before any
+// of them render.
+interface PlannedVariation {
+	outputPath: string;
+	resolved: ResolvedVariation;
+	skinName?: string;
+}
+
 // Batch path: every animation across the resolved skin set (the animations × skins
 // cross-product, narrowable via `skinNames`), APNG only, happy path. Assets load
 // once and variations render strictly sequentially (render → encode → write →
 // release the frames). An unknown requested skin fails fast from enumeration
-// before any rendering. The registered canvas, WebP/format selection, the
-// collected failure model, and `--json` land in later slices; `failed` is
-// therefore always empty here.
+// before any rendering.
+//
+// Sizing defaults to a registered canvas per skin: a cheap pose-only measure pass
+// computes the union of the skin's animation bounds, then every animation renders
+// on that one canvas so the states line up pixel-for-pixel. `tight` opts back into
+// per-animation auto-fit; explicit `width`/`height` force the canvas uniformly.
+//
+// WebP/format selection, the collected failure model, and `--json` land in later
+// slices; `failed` is therefore always empty here.
 export async function renderSpineVariations(
 	options: RenderSpineVariationsOptions,
 ): Promise<RenderSpineVariationsResult> {
@@ -64,6 +91,9 @@ export async function renderSpineVariations(
 	}
 
 	const backgroundColor = normalizeBackgroundColor(options.backgroundColor);
+	const width = validateExplicitDimension("width", options.width);
+	const height = validateExplicitDimension("height", options.height);
+	const tight = options.tight ?? false;
 	const format: OutputFormat = "apng";
 	const encodeOptions = resolveEncodeOptions({ format });
 	const encoder = resolveAnimatedImageEncoder(format);
@@ -87,42 +117,77 @@ export async function renderSpineVariations(
 			skeletonPath: inputs.skeletonPath,
 			skinNames: skeleton.skinNames,
 		});
-		const succeeded: RenderSpineResult[] = [];
-		const renderedSkins = new Set<string>();
 
+		// Resolve every variation (validating animation/skin names) and group it
+		// under its skin. enumerateVariations is skin-major, and a Map preserves
+		// first-seen key order, so the groups keep skeleton-declared skin order.
+		const skinGroups = new Map<string | undefined, PlannedVariation[]>();
 		for (const variation of variations) {
 			const resolved = canvasSpineRenderer.resolveVariation(assets, {
 				animationName: variation.animationName,
 				skinName: variation.skinName,
 			});
-			const outputPath = deriveOutputPath({
-				animationName: resolved.animationName,
-				format,
-				outputDir,
-				skinName: variation.skinName,
-			});
-			const { encoded, result } = await renderVariation(canvasSpineRenderer, assets, {
-				atlasPath: inputs.atlasPath,
-				backgroundColor,
-				encodeOptions,
-				encoder,
-				format,
-				fps,
-				outputPath,
+			const planned: PlannedVariation = {
+				outputPath: deriveOutputPath({
+					animationName: resolved.animationName,
+					format,
+					outputDir,
+					skinName: variation.skinName,
+				}),
 				resolved,
-				skeletonPath: inputs.skeletonPath,
-			});
+				skinName: variation.skinName,
+			};
+			const group = skinGroups.get(variation.skinName);
 
-			await mkdir(path.dirname(outputPath), { recursive: true });
-			await writeFile(outputPath, encoded);
-
-			succeeded.push(result);
-
-			if (variation.skinName !== undefined) {
-				renderedSkins.add(variation.skinName);
+			if (group) {
+				group.push(planned);
+			} else {
+				skinGroups.set(variation.skinName, [planned]);
 			}
+		}
 
-			options.onProgress?.(result);
+		const succeeded: RenderSpineResult[] = [];
+		const renderedSkins = new Set<string>();
+
+		for (const group of skinGroups.values()) {
+			// The registered canvas: union the whole skin's bounds once, then render
+			// every animation onto it. `tight` skips this so each animation auto-fits.
+			const registeredBounds = tight
+				? undefined
+				: measureRegisteredBounds(
+						canvasSpineRenderer,
+						assets,
+						group.map((planned) => planned.resolved),
+						fps,
+					);
+
+			for (const planned of group) {
+				const { encoded, result } = await renderVariation(canvasSpineRenderer, assets, {
+					atlasPath: inputs.atlasPath,
+					backgroundColor,
+					bounds: registeredBounds,
+					encodeOptions,
+					encoder,
+					format,
+					fps,
+					height,
+					outputPath: planned.outputPath,
+					resolved: planned.resolved,
+					skeletonPath: inputs.skeletonPath,
+					width,
+				});
+
+				await mkdir(path.dirname(planned.outputPath), { recursive: true });
+				await writeFile(planned.outputPath, encoded);
+
+				succeeded.push(result);
+
+				if (planned.skinName !== undefined) {
+					renderedSkins.add(planned.skinName);
+				}
+
+				options.onProgress?.(result);
+			}
 		}
 
 		return {

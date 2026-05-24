@@ -105,6 +105,115 @@ test("packed package API forces the default skin when it is requested explicitly
 	}
 });
 
+test("packed package API registers every animation in a skin on one uniform canvas", async () => {
+	const tempDirectory = await mkdtemp(
+		path.join(os.tmpdir(), "spine2img-api-render-all-registered-"),
+	);
+
+	try {
+		const outputDir = path.join(tempDirectory, "out");
+		const packageApi = await importPackageApi();
+		const result = await packageApi.renderSpineVariations({
+			outputDir,
+			skeletonPath: renderAllFixtureSkeletonPath,
+		});
+
+		// The fixture's three animations move the box by different amounts, so a
+		// registered skin collapses them onto one shared canvas size.
+		for (const skinName of ["alt", "wide"]) {
+			const dimensions = result.succeeded
+				.filter((entry) => entry.skinName === skinName)
+				.map((entry) => `${entry.width}x${entry.height}`);
+
+			expect(dimensions).toHaveLength(3);
+			expect(new Set(dimensions).size).toBe(1);
+		}
+
+		// The registered size is also what lands on disk.
+		const altIdle = result.succeeded.find(
+			(entry) => entry.skinName === "alt" && entry.animationName === "idle",
+		);
+		const decoded = decodeApng(await readFile(altIdle?.outputPath ?? ""));
+		expect(decoded.width).toBe(altIdle?.width);
+		expect(decoded.height).toBe(altIdle?.height);
+	} finally {
+		await rm(tempDirectory, { force: true, recursive: true });
+	}
+});
+
+test("packed package API --tight auto-fits each animation to its own bounds", async () => {
+	const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-api-render-all-tight-"));
+
+	try {
+		const packageApi = await importPackageApi();
+		const registered = await packageApi.renderSpineVariations({
+			outputDir: path.join(tempDirectory, "registered"),
+			skeletonPath: renderAllFixtureSkeletonPath,
+			skinNames: ["alt"],
+		});
+		const tight = await packageApi.renderSpineVariations({
+			outputDir: path.join(tempDirectory, "tight"),
+			skeletonPath: renderAllFixtureSkeletonPath,
+			skinNames: ["alt"],
+			tight: true,
+		});
+
+		const registeredDimensions = new Set(
+			registered.succeeded.map((entry) => `${entry.width}x${entry.height}`),
+		);
+		const tightDimensions = new Set(
+			tight.succeeded.map((entry) => `${entry.width}x${entry.height}`),
+		);
+
+		// Registration collapses the skin to one size; --tight keeps each animation's
+		// own crop, so the three animations differ.
+		expect(registeredDimensions.size).toBe(1);
+		expect(tightDimensions.size).toBeGreaterThan(1);
+
+		// The registered canvas is the union of the tight crops, so it is never
+		// smaller than any individual animation.
+		for (const tightEntry of tight.succeeded) {
+			const registeredEntry = registered.succeeded.find(
+				(entry) => entry.animationName === tightEntry.animationName,
+			);
+
+			expect(registeredEntry?.width).toBeGreaterThanOrEqual(tightEntry.width);
+			expect(registeredEntry?.height).toBeGreaterThanOrEqual(tightEntry.height);
+		}
+	} finally {
+		await rm(tempDirectory, { force: true, recursive: true });
+	}
+});
+
+test("packed package API forces a uniform canvas with explicit width and height", async () => {
+	const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-api-render-all-size-"));
+
+	try {
+		const outputDir = path.join(tempDirectory, "out");
+		const packageApi = await importPackageApi();
+		const result = await packageApi.renderSpineVariations({
+			height: 90,
+			outputDir,
+			skeletonPath: renderAllFixtureSkeletonPath,
+			width: 120,
+		});
+
+		// Explicit dimensions override sizing uniformly across every skin and
+		// animation, not just one variation.
+		expect(result.succeeded).toHaveLength(6);
+		expect(result.succeeded.every((entry) => entry.width === 120 && entry.height === 90)).toBe(
+			true,
+		);
+
+		const sample = result.succeeded[0];
+		const decoded = decodeApng(await readFile(sample?.outputPath ?? ""));
+		expect(decoded.width).toBe(120);
+		expect(decoded.height).toBe(90);
+	} finally {
+		await rm(tempDirectory, { force: true, recursive: true });
+	}
+});
+
 test("packed package API fails fast with a typed error for an unknown skin", async () => {
 	const tempDirectory = await mkdtemp(
 		path.join(os.tmpdir(), "spine2img-api-render-all-unknown-"),

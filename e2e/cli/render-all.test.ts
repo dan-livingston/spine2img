@@ -41,6 +41,73 @@ test("packed package CLI render-all renders the cross-product across named skins
 	}
 });
 
+test("packed package CLI render-all registers a skin by default and --tight opts out", async () => {
+	const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-cli-render-all-tight-"));
+
+	try {
+		const registeredDir = path.join(tempDirectory, "registered");
+		await runCli(["render-all", renderAllFixtureSkeletonPath, registeredDir, "--skin", "alt"]);
+
+		const registeredIdle = decodeApng(
+			await readFile(path.join(registeredDir, "alt", "idle.apng")),
+		);
+		const registeredHover = decodeApng(
+			await readFile(path.join(registeredDir, "alt", "hover.apng")),
+		);
+		// Registered: every animation in the skin shares one canvas.
+		expect(registeredIdle.width).toBe(registeredHover.width);
+		expect(registeredIdle.height).toBe(registeredHover.height);
+
+		const tightDir = path.join(tempDirectory, "tight");
+		await runCli([
+			"render-all",
+			renderAllFixtureSkeletonPath,
+			tightDir,
+			"--skin",
+			"alt",
+			"--tight",
+		]);
+
+		const tightIdle = decodeApng(await readFile(path.join(tightDir, "alt", "idle.apng")));
+		const tightHover = decodeApng(await readFile(path.join(tightDir, "alt", "hover.apng")));
+		// --tight: each animation auto-fits to its own bounds, so the two differ.
+		expect(tightIdle.width !== tightHover.width || tightIdle.height !== tightHover.height).toBe(
+			true,
+		);
+	} finally {
+		await rm(tempDirectory, { force: true, recursive: true });
+	}
+});
+
+test("packed package CLI render-all --width/--height force a uniform canvas", async () => {
+	const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-cli-render-all-size-"));
+
+	try {
+		const outputDir = path.join(tempDirectory, "out");
+		await runCli([
+			"render-all",
+			renderAllFixtureSkeletonPath,
+			outputDir,
+			"--width",
+			"100",
+			"--height",
+			"80",
+		]);
+
+		for (const skinName of ["alt", "wide"]) {
+			for (const animation of ["hover", "idle", "press"]) {
+				const decoded = decodeApng(
+					await readFile(path.join(outputDir, skinName, `${animation}.apng`)),
+				);
+				expect(decoded.width).toBe(100);
+				expect(decoded.height).toBe(80);
+			}
+		}
+	} finally {
+		await rm(tempDirectory, { force: true, recursive: true });
+	}
+});
+
 test("packed package CLI render-all narrows to a repeatable --skin subset", async () => {
 	const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-cli-render-all-subset-"));
 
