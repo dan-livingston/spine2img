@@ -1,10 +1,11 @@
 import type { EncodingMetadata, LosslessEncoding } from "#/lib/encoding-metadata.ts";
 import type { OutputFormat } from "#/lib/output-format.ts";
-import type { Sample, Viewport } from "#/lib/renderer-backend.ts";
 
+import { normalizeBackgroundColor } from "#/lib/background-color.ts";
 import { canvasSpineRenderer } from "#/lib/canvas-spine-renderer.ts";
 import { OutputCollisionError } from "#/lib/errors.ts";
 import { isMissingFileError, isNodeErrorWithCode } from "#/lib/node-errors.ts";
+import { renderVariation } from "#/lib/render-variation.ts";
 import { resolveAnimatedImageEncoder } from "#/lib/resolve-animated-image-encoder.ts";
 import { resolveEncodeOptions } from "#/lib/resolve-encode-options.ts";
 import { resolveFormat, type ResolvedOutputFormat } from "#/lib/resolve-format.ts";
@@ -100,46 +101,24 @@ export async function renderSpine(options: RenderSpineOptions): Promise<RenderSp
 			animationName: options.animationName,
 			skinName: options.skinName,
 		});
-		const samples = createSamples(variation.animationDurationSeconds, fps);
-		const bounds = canvasSpineRenderer.measureBounds(assets, variation, samples);
-		const viewport: Viewport = {
+		const { encoded, result } = await renderVariation(canvasSpineRenderer, assets, {
+			atlasPath,
 			backgroundColor,
-			height: explicitHeight ?? bounds.height,
-			width: explicitWidth ?? bounds.width,
-		};
-		const frames = canvasSpineRenderer.renderFrames(
-			assets,
-			variation,
-			samples,
-			bounds,
-			viewport,
-		);
-		const encoded = await encoder.encode({
-			delaysMs: samples.map((sample) => sample.delayMs),
-			frames,
-			height: viewport.height,
-			lossless: encodeOptions.lossless,
-			quality: encodeOptions.quality,
-			width: viewport.width,
+			encodeOptions,
+			encoder,
+			format,
+			fps,
+			height: explicitHeight,
+			outputPath,
+			resolved: variation,
+			skeletonPath,
+			width: explicitWidth,
 		});
 
 		await mkdir(path.dirname(outputPath), { recursive: true });
 		await writeOutputFile(outputPath, encoded, overwrite);
 
-		return {
-			animationName: variation.animationName,
-			atlasPath,
-			durationMs: samples.reduce((total, sample) => total + sample.delayMs, 0),
-			format,
-			fps,
-			frameCount: frames.length,
-			height: viewport.height,
-			outputPath,
-			skeletonPath,
-			skinName: variation.skinName,
-			width: viewport.width,
-			...encodeOptions,
-		};
+		return result;
 	} finally {
 		canvasSpineRenderer.disposeAssets(assets);
 	}
@@ -200,16 +179,6 @@ async function writeOutputFile(
 	}
 }
 
-function createSamples(durationSeconds: number, fps: number): Sample[] {
-	const frameDelayMs = Math.max(1, Math.round(1000 / fps));
-	const sampleCount = Math.max(1, Math.ceil(durationSeconds * fps));
-
-	return Array.from({ length: sampleCount }, (_, index) => ({
-		delayMs: frameDelayMs,
-		timeSeconds: sampleCount === 1 ? 0 : Math.min(index / fps, durationSeconds),
-	}));
-}
-
 function validateExplicitDimension(
 	name: "height" | "width",
 	value: number | undefined,
@@ -223,31 +192,4 @@ function validateExplicitDimension(
 	}
 
 	return value;
-}
-
-function normalizeBackgroundColor(backgroundColor: string | undefined): string | undefined {
-	if (backgroundColor === undefined) {
-		return undefined;
-	}
-
-	const normalized = backgroundColor.trim();
-	const hexMatch = /^#(?<hex>[0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.exec(normalized);
-
-	if (!hexMatch?.groups?.hex) {
-		throw new Error(
-			`backgroundColor must be a hex color like #rgb, #rgba, #rrggbb, or #rrggbbaa. Received ${backgroundColor}.`,
-		);
-	}
-
-	const hex = hexMatch.groups.hex;
-	const expanded =
-		hex.length === 3 || hex.length === 4
-			? Array.from(hex, (character) => `${character}${character}`).join("")
-			: hex;
-	const red = Number.parseInt(expanded.slice(0, 2), 16);
-	const green = Number.parseInt(expanded.slice(2, 4), 16);
-	const blue = Number.parseInt(expanded.slice(4, 6), 16);
-	const alphaByte = expanded.length === 8 ? Number.parseInt(expanded.slice(6, 8), 16) : 255;
-
-	return `rgba(${red}, ${green}, ${blue}, ${Number((alphaByte / 255).toFixed(3))})`;
 }

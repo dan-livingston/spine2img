@@ -7,6 +7,11 @@ export interface RenderVariation {
 	skinName?: string;
 }
 
+export interface SkeletonDescription {
+	animationNames: string[];
+	skinNames: string[];
+}
+
 export interface ResolvedVariation extends RenderVariation {
 	animationDurationSeconds: number;
 }
@@ -37,6 +42,7 @@ export interface Viewport {
 }
 
 export interface RendererBackend<THandle> {
+	describeSkeleton(assets: LoadedAssets<THandle>): SkeletonDescription;
 	disposeAssets(assets: LoadedAssets<THandle>): void;
 	loadAssets(options: {
 		atlasPath: string;

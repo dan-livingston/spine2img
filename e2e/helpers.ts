@@ -13,6 +13,8 @@ const rootDirectory = path.resolve(new URL("..", import.meta.url).pathname);
 
 export const fixtureDirectory = path.join(rootDirectory, "fixtures", "tracer-bullet");
 export const fixtureSkeletonPath = path.join(fixtureDirectory, "box.json");
+export const renderAllFixtureDirectory = path.join(rootDirectory, "fixtures", "render-all");
+export const renderAllFixtureSkeletonPath = path.join(renderAllFixtureDirectory, "button.json");
 export const animatedFormatCases = [
 	{
 		extension: "apng",

@@ -5,6 +5,7 @@ import type {
 	RenderVariation,
 	ResolvedVariation,
 	Sample,
+	SkeletonDescription,
 	VariationSelection,
 	Viewport,
 } from "#/lib/renderer-backend.ts";
@@ -40,6 +41,15 @@ interface CanvasAssetsHandle {
 }
 
 class CanvasSpineRenderer implements RendererBackend<CanvasAssetsHandle> {
+	describeSkeleton(assets: LoadedAssets<CanvasAssetsHandle>): SkeletonDescription {
+		const { skeletonData } = assets.handle;
+
+		return {
+			animationNames: skeletonData.animations.map((animation) => animation.name),
+			skinNames: skeletonData.skins.map((skin) => skin.name),
+		};
+	}
+
 	disposeAssets(assets: LoadedAssets<CanvasAssetsHandle>): void {
 		assets.handle.atlas.dispose();
 	}

@@ -31,6 +31,7 @@ test("packed package exposes the stable public contract", async () => {
 		"renderSpine",
 		"renderSpineToApng",
 		"renderSpineToWebp",
+		"renderSpineVariations",
 	]);
 	expect(packageJson.bin).toEqual({
 		spine2img: "./dist/bin.mjs",

@@ -1,3 +1,6 @@
+import type { RenderSpineResult } from "#/render-spine.ts";
+
+import { renderSpineVariations } from "#/render-spine-variations.ts";
 import { renderSpine } from "#/render-spine.ts";
 import { Command, InvalidArgumentError } from "commander";
 
@@ -68,9 +71,49 @@ export function createCli(): Command {
 						`Rendered ${result.animationName} to ${result.outputPath} (${result.width}x${result.height}, ${result.frameCount} frames @ ${result.fps} fps).`,
 					);
 				}),
+		)
+		.addCommand(
+			new Command("render-all")
+				.description(
+					"Render every animation of a Spine skeleton's default skin to a directory.",
+				)
+				.argument("<skeleton>", "path to the Spine JSON skeleton")
+				.argument("<outDir>", "directory for the rendered image files")
+				.option(
+					"--atlas <atlas>",
+					"path to the Spine atlas (defaults beside the skeleton; relative paths resolve from the current directory)",
+				)
+				.option(
+					"--background <color>",
+					"solid background hex color (#rgb, #rgba, #rrggbb, or #rrggbbaa)",
+				)
+				.option("--fps <fps>", "frames per second", Number)
+				.action(async (skeleton, outDir, options) => {
+					const result = await renderSpineVariations({
+						skeletonPath: skeleton,
+						outputDir: outDir,
+						atlasPath: options.atlas,
+						backgroundColor: options.background,
+						fps: options.fps,
+						onProgress: (variation) => {
+							console.log(
+								`Rendered ${formatVariationLabel(variation)} to ${variation.outputPath} (${variation.width}x${variation.height}, ${variation.frameCount} frames @ ${variation.fps} fps).`,
+							);
+						},
+					});
+					const count = result.succeeded.length;
+
+					console.log(
+						`Rendered ${count} variation${count === 1 ? "" : "s"} to ${result.outputDir}.`,
+					);
+				}),
 		);
 
 	return program;
+}
+
+function formatVariationLabel(result: RenderSpineResult): string {
+	return result.skinName ? `${result.skinName}/${result.animationName}` : result.animationName;
 }
 
 export async function runCli(argv = process.argv): Promise<void> {

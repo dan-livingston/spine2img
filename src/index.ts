@@ -24,3 +24,8 @@ export {
 	type RenderSpineOptions,
 	type RenderSpineResult,
 } from "#/render-spine.ts";
+export {
+	renderSpineVariations,
+	type RenderSpineVariationsOptions,
+	type RenderSpineVariationsResult,
+} from "#/render-spine-variations.ts";
