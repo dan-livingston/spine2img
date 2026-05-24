@@ -9,6 +9,8 @@ import type {
 	VariationSelection,
 	Viewport,
 } from "#/lib/renderer-backend.ts";
+import type { SlotData } from "@esotericsoftware/spine-canvas";
+import type { SKRSContext2D } from "@napi-rs/canvas";
 
 import {
 	SpineInputResolutionError,
@@ -23,9 +25,11 @@ import {
 	AnimationStateData,
 	AtlasAttachmentLoader,
 	CanvasTexture,
+	ClippingAttachment,
 	Physics,
+	RegionAttachment,
 	Skeleton,
-	SkeletonRenderer,
+	SkeletonClipping,
 	SkeletonJson,
 	TextureAtlas,
 	Vector2,
@@ -114,11 +118,16 @@ class CanvasSpineRenderer implements RendererBackend<CanvasAssetsHandle> {
 		let maxX = Number.NEGATIVE_INFINITY;
 		let maxY = Number.NEGATIVE_INFINITY;
 
+		// Measure the clipped silhouette: getBounds restricts each region/mesh to the
+		// clipping polygon, so a slot masked to a smaller area (e.g. a shine clipped to
+		// a face) contributes only its visible extent, not its full attachment quad.
+		const clipper = new SkeletonClipping();
+
 		for (const sample of samples) {
 			const skeleton = poseSkeleton(assets, variation, sample.timeSeconds);
 			const offset = new Vector2();
 			const size = new Vector2();
-			skeleton.getBounds(offset, size, []);
+			skeleton.getBounds(offset, size, [], clipper);
 
 			minX = Math.min(minX, offset.x);
 			minY = Math.min(minY, offset.y);
@@ -155,8 +164,7 @@ class CanvasSpineRenderer implements RendererBackend<CanvasAssetsHandle> {
 
 			context.translate(-bounds.minX, -bounds.minY);
 
-			const renderer = new SkeletonRenderer(context);
-			renderer.draw(skeleton);
+			drawSkeletonClipped(context, skeleton);
 
 			return toArrayBuffer(canvas.data());
 		});
@@ -244,6 +252,119 @@ function poseSkeleton(
 	skeleton.updateWorldTransform(Physics.update);
 
 	return skeleton;
+}
+
+type DrawOrderSlot = Skeleton["drawOrder"]["appliedPose"][number];
+
+// The canvas backend has no native clipping support: spine-canvas's SkeletonRenderer
+// silently skips ClippingAttachments, so a slot masked in the editor (e.g. a shine
+// clipped to a face) would otherwise render unclipped. This mirrors that renderer's
+// region drawing, but also walks the clip range — applying the mask polygon as a
+// canvas clip path from the clipping slot through its end slot — so the rendered
+// pixels match the silhouette measureBounds already measures with the same mask.
+// Mesh attachments are skipped, matching the SkeletonRenderer path this replaces.
+function drawSkeletonClipped(context: SKRSContext2D, skeleton: Skeleton): void {
+	const drawOrder = skeleton.drawOrder.appliedPose;
+	let clipEndSlot: SlotData | null = null;
+
+	for (const slot of drawOrder) {
+		const attachment = slot.appliedPose.attachment;
+
+		if (attachment instanceof ClippingAttachment) {
+			applyClipPath(context, skeleton, slot, attachment);
+			clipEndSlot = attachment.endSlot;
+			continue;
+		}
+
+		if (slot.bone.active && attachment instanceof RegionAttachment) {
+			drawRegion(context, skeleton, slot, attachment);
+		}
+
+		// The clip range is inclusive of its end slot, so release the path only after
+		// that slot has been drawn.
+		if (clipEndSlot && slot.data === clipEndSlot) {
+			context.restore();
+			clipEndSlot = null;
+		}
+	}
+
+	// A clip whose end slot never appears (or is the skeleton's last slot) stays open
+	// until the draw completes; release the saved state so the context is balanced.
+	if (clipEndSlot) {
+		context.restore();
+	}
+}
+
+function applyClipPath(
+	context: SKRSContext2D,
+	skeleton: Skeleton,
+	slot: DrawOrderSlot,
+	clip: ClippingAttachment,
+): void {
+	const length = clip.worldVerticesLength;
+	const vertices = new Float32Array(length);
+	clip.computeWorldVertices(skeleton, slot, 0, length, vertices, 0, 2);
+
+	context.save();
+	context.beginPath();
+	context.moveTo(vertices[0], vertices[1]);
+	for (let index = 2; index < length; index += 2) {
+		context.lineTo(vertices[index], vertices[index + 1]);
+	}
+	context.closePath();
+	context.clip();
+}
+
+// Faithful to SkeletonRenderer.drawImages: position the region with the bone's world
+// transform and the attachment's offset/rotation/scale, flip into canvas space, and
+// blit the atlas sub-rect.
+function drawRegion(
+	context: SKRSContext2D,
+	skeleton: Skeleton,
+	slot: DrawOrderSlot,
+	attachment: RegionAttachment,
+): void {
+	const pose = slot.appliedPose;
+	const region = attachment.sequence.regions[attachment.sequence.resolveIndex(pose)];
+	if (!region) {
+		return;
+	}
+	const image = region.texture.getImage();
+
+	context.save();
+	const bone = slot.bone.appliedPose;
+	context.transform(bone.a, bone.c, bone.b, bone.d, bone.worldX, bone.worldY);
+	const offsets = attachment.getOffsets(pose);
+	context.translate(offsets[0], offsets[1]);
+	context.rotate((attachment.rotation * Math.PI) / 180);
+	const atlasScale = attachment.width / region.originalWidth;
+	context.scale(atlasScale * attachment.scaleX, atlasScale * attachment.scaleY);
+
+	let width = region.width;
+	let height = region.height;
+	context.translate(width / 2, height / 2);
+	if (region.degrees === 90) {
+		const swap = width;
+		width = height;
+		height = swap;
+		context.rotate(-Math.PI / 2);
+	}
+	context.scale(1, -1);
+	context.translate(-width / 2, -height / 2);
+
+	context.globalAlpha = skeleton.color.a * pose.color.a * attachment.color.a;
+	context.drawImage(
+		image,
+		image.width * region.u,
+		image.height * region.v,
+		width,
+		height,
+		0,
+		0,
+		width,
+		height,
+	);
+	context.restore();
 }
 
 function selectAnimation(

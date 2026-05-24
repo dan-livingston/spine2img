@@ -15,6 +15,8 @@ export const fixtureDirectory = path.join(rootDirectory, "fixtures", "tracer-bul
 export const fixtureSkeletonPath = path.join(fixtureDirectory, "box.json");
 export const renderAllFixtureDirectory = path.join(rootDirectory, "fixtures", "render-all");
 export const renderAllFixtureSkeletonPath = path.join(renderAllFixtureDirectory, "button.json");
+export const clippingFixtureDirectory = path.join(rootDirectory, "fixtures", "clipping");
+export const clippingFixtureSkeletonPath = path.join(clippingFixtureDirectory, "clip.json");
 export const animatedFormatCases = [
 	{
 		extension: "apng",

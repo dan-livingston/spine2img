@@ -1,0 +1,74 @@
+{
+	"skeleton": {
+		"spine": "4.3.0",
+		"width": 120,
+		"height": 120
+	},
+	"bones": [
+		{
+			"name": "root"
+		}
+	],
+	"slots": [
+		{
+			"name": "base",
+			"bone": "root",
+			"attachment": "base"
+		},
+		{
+			"name": "mask",
+			"bone": "root",
+			"attachment": "mask"
+		},
+		{
+			"name": "shine",
+			"bone": "root",
+			"attachment": "shine"
+		}
+	],
+	"skins": [
+		{
+			"name": "default",
+			"attachments": {
+				"base": {
+					"base": {
+						"type": "region",
+						"path": "base",
+						"width": 60,
+						"height": 60
+					}
+				},
+				"mask": {
+					"mask": {
+						"type": "clipping",
+						"end": "shine",
+						"vertexCount": 4,
+						"vertices": [-10, -10, 10, -10, 10, 10, -10, 10]
+					}
+				},
+				"shine": {
+					"shine": {
+						"type": "region",
+						"path": "shine",
+						"width": 120,
+						"height": 120
+					}
+				}
+			}
+		}
+	],
+	"animations": {
+		"reveal": {
+			"slots": {
+				"shine": {
+					"rgba": [
+						{
+							"time": 0,
+							"color": "ffffffff"
+						}
+					]
+				}
+			}
+		}
+	}
+}
