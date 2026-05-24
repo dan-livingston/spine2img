@@ -7,7 +7,12 @@ declare module "upng-js" {
 			delay: number;
 		}>;
 		height: number;
-		tabs: Record<string, unknown>;
+		tabs: {
+			acTL?: {
+				num_frames: number;
+				num_plays: number;
+			};
+		} & Record<string, unknown>;
 		width: number;
 	}
 

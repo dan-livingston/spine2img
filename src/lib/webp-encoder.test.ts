@@ -14,6 +14,7 @@ test("webpEncoder writes lossless animated WebP from straight-alpha RGBA frames"
 		delaysMs,
 		frames: frames.map((frame) => frame.buffer.slice(0)),
 		height,
+		loop: 0,
 		lossless: true,
 		width,
 	});
@@ -42,12 +43,39 @@ test("webpEncoder writes lossless animated WebP from straight-alpha RGBA frames"
 	expect(splitFrames(data, width, height, frames.length)).toEqual(frames);
 });
 
+test("webpEncoder passes the loop count straight through to the encoded WebP", async () => {
+	const frames = [
+		Uint8Array.from([255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 0, 0, 0, 255]),
+		Uint8Array.from([0, 0, 0, 255, 255, 255, 0, 255, 255, 0, 255, 255, 0, 255, 255, 255]),
+	];
+	const playOnce = await webpEncoder.encode({
+		delaysMs: [40, 80],
+		frames: frames.map((frame) => frame.buffer.slice(0)),
+		height: 2,
+		loop: 1,
+		lossless: true,
+		width: 2,
+	});
+	const infinite = await webpEncoder.encode({
+		delaysMs: [40, 80],
+		frames: frames.map((frame) => frame.buffer.slice(0)),
+		height: 2,
+		loop: 0,
+		lossless: true,
+		width: 2,
+	});
+
+	expect((await sharp(playOnce, { animated: true }).metadata()).loop).toBe(1);
+	expect((await sharp(infinite, { animated: true }).metadata()).loop).toBe(0);
+});
+
 test("webpEncoder writes smaller lossy WebP output than lossless for the same frames", async () => {
 	const frames = createTestFrames(3, 48, 48);
 	const lossless = await webpEncoder.encode({
 		delaysMs: [50, 50, 50],
 		frames,
 		height: 48,
+		loop: 0,
 		lossless: true,
 		width: 48,
 	});
@@ -55,6 +83,7 @@ test("webpEncoder writes smaller lossy WebP output than lossless for the same fr
 		delaysMs: [50, 50, 50],
 		frames,
 		height: 48,
+		loop: 0,
 		lossless: false,
 		quality: 80,
 		width: 48,
@@ -72,6 +101,7 @@ test("webpEncoder quality affects lossy WebP size", async () => {
 		delaysMs: [50, 50, 50],
 		frames,
 		height: 48,
+		loop: 0,
 		lossless: false,
 		quality: 20,
 		width: 48,
@@ -80,6 +110,7 @@ test("webpEncoder quality affects lossy WebP size", async () => {
 		delaysMs: [50, 50, 50],
 		frames,
 		height: 48,
+		loop: 0,
 		lossless: false,
 		quality: 90,
 		width: 48,

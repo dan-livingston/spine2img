@@ -14,6 +14,7 @@ export type SpineSelectionErrorCode = "missing-selection";
 export type OutputCollisionErrorCode = "existing-output";
 export type OutputPathErrorCode = "unsafe-output-path";
 export type RenderOptionValidationErrorCode =
+	| "invalid-loop"
 	| "invalid-quality"
 	| "unsupported-lossy-output"
 	| "unsupported-quality-output";

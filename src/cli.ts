@@ -46,6 +46,7 @@ export function createCli(): Command {
 					"solid background hex color (#rgb, #rgba, #rrggbb, or #rrggbbaa)",
 				)
 				.option("--fps <fps>", "frames per second", Number)
+				.option("--loop <count>", "loop count to embed (0 = infinite, the default)", Number)
 				.option("--no-lossless", "opt into lossy WebP output")
 				.option("--quality <quality>", "lossy WebP quality from 0 to 100", Number)
 				.option("--json", "print structured result metadata as JSON")
@@ -62,6 +63,7 @@ export function createCli(): Command {
 						fps: options.fps,
 						format: options.format,
 						height: options.height,
+						loop: options.loop,
 						lossless: options.lossless,
 						overwrite: options.overwrite,
 						quality: options.quality,

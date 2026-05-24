@@ -3,8 +3,6 @@ import type { AnimatedImageEncoder, EncodeAnimatedImageOptions } from "#/lib/ani
 import { assertValidEncodeOptions, RGBA_CHANNEL_COUNT } from "#/lib/animation-encoder.ts";
 import sharp from "sharp";
 
-const INFINITE_LOOP = 0;
-
 class WebpEncoder implements AnimatedImageEncoder<"webp"> {
 	readonly format = "webp";
 
@@ -24,7 +22,7 @@ class WebpEncoder implements AnimatedImageEncoder<"webp"> {
 				delay: options.delaysMs,
 				effort: 4,
 				lossless: options.lossless,
-				loop: INFINITE_LOOP,
+				loop: options.loop,
 				quality: options.lossless ? undefined : options.quality,
 			})
 			.toBuffer();

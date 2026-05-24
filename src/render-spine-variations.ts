@@ -14,6 +14,7 @@ import { renderVariation } from "#/lib/render-variation.ts";
 import { resolveAnimatedImageEncoder } from "#/lib/resolve-animated-image-encoder.ts";
 import { resolveBatchFormat } from "#/lib/resolve-batch-format.ts";
 import { resolveEncodeOptions } from "#/lib/resolve-encode-options.ts";
+import { INFINITE_LOOP } from "#/lib/resolve-loop.ts";
 import { resolveSpineInputs } from "#/lib/resolve-spine-inputs.ts";
 import { validateExplicitDimension } from "#/lib/validate-dimension.ts";
 import { writeOutputFile } from "#/lib/write-output-file.ts";
@@ -250,6 +251,9 @@ export async function runSpineVariations<THandle>(
 						format,
 						fps,
 						height,
+						// Batch loop policy lands in a later slice; until then every
+						// variation keeps the historical infinite-loop default.
+						loop: INFINITE_LOOP,
 						outputPath: planned.outputPath,
 						resolved: planned.resolved,
 						skeletonPath: inputs.skeletonPath,

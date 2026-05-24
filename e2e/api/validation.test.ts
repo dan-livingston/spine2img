@@ -87,3 +87,26 @@ test("packed package API throws typed validation errors for incompatible encode 
 		});
 	}
 });
+
+test("packed package API rejects an invalid loop count with a typed validation error", async () => {
+	const packageApi = await importPackageApi();
+	const unreadableSkeletonPath = path.join(os.tmpdir(), "spine2img-missing", "box.json");
+	const invalidLoops = [-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY];
+
+	for (const [index, loop] of invalidLoops.entries()) {
+		let error: unknown;
+
+		try {
+			await packageApi.renderSpine({
+				loop,
+				outputPath: path.join(os.tmpdir(), `spine2img-invalid-loop-${index}.apng`),
+				skeletonPath: unreadableSkeletonPath,
+			});
+		} catch (caught) {
+			error = caught;
+		}
+
+		expect(error).toBeInstanceOf(packageApi.RenderOptionValidationError);
+		expect(error).toMatchObject({ code: "invalid-loop" });
+	}
+});

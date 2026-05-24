@@ -24,6 +24,9 @@ export interface RenderVariationOptions {
 	format: OutputFormat;
 	fps: number;
 	height?: number;
+	// The resolved loop count (`0` = infinite), carried into the encoder and onto the
+	// result so a batch entry reports it the same way a single render does.
+	loop: number;
 	outputPath: string;
 	resolved: ResolvedVariation;
 	skeletonPath: string;
@@ -60,6 +63,7 @@ export async function renderVariation<THandle>(
 		delaysMs: samples.map((sample) => sample.delayMs),
 		frames,
 		height: viewport.height,
+		loop: options.loop,
 		lossless: options.encodeOptions.lossless,
 		quality: options.encodeOptions.quality,
 		width: viewport.width,
@@ -75,6 +79,7 @@ export async function renderVariation<THandle>(
 			fps: options.fps,
 			frameCount: frames.length,
 			height: viewport.height,
+			loop: options.loop,
 			outputPath: options.outputPath,
 			skeletonPath: options.skeletonPath,
 			skinName: resolved.skinName,

@@ -9,6 +9,7 @@ import {
 	decodeAnimation,
 	decodeApng,
 	decodeApngFrames,
+	decodeLoop,
 	decodeWebpFrames,
 	fixtureSkeletonPath,
 	readPixel,
@@ -102,6 +103,38 @@ describe.each(animatedFormatCases)(
 				expect(decoded.frameCount).toBe(result.frameCount);
 				expect(decoded.height).toBe(result.height);
 				expect(decoded.width).toBe(result.width);
+			} finally {
+				await rm(tempDirectory, { force: true, recursive: true });
+			}
+		});
+	},
+);
+
+describe.each(animatedFormatCases)(
+	"packed package CLI embeds --loop for $format output",
+	({ extension, format }) => {
+		test("--loop 1 produces a play-once file while omitting it stays infinite", async () => {
+			const tempDirectory = await mkdtemp(
+				path.join(os.tmpdir(), `spine2img-cli-loop-${format}-`),
+			);
+
+			try {
+				const playOncePath = path.join(tempDirectory, `play-once.${extension}`);
+				const infinitePath = path.join(tempDirectory, `infinite.${extension}`);
+				const { stdout } = await runCli([
+					"render",
+					fixtureSkeletonPath,
+					playOncePath,
+					"--loop",
+					"1",
+					"--json",
+				]);
+				await runCli(["render", fixtureSkeletonPath, infinitePath]);
+				const result = JSON.parse(stdout) as { loop: number };
+
+				expect(result.loop).toBe(1);
+				expect(await decodeLoop(await readFile(playOncePath), format)).toBe(1);
+				expect(await decodeLoop(await readFile(infinitePath), format)).toBe(0);
 			} finally {
 				await rm(tempDirectory, { force: true, recursive: true });
 			}

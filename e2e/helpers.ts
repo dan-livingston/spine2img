@@ -65,6 +65,24 @@ export function decodeApng(file: Uint8Array) {
 	};
 }
 
+// The loop count baked into an APNG, read straight from the `acTL` chunk UPNG
+// decodes. Multi-frame output always carries `acTL`; a single-frame plain PNG has
+// none, so the count is reported as the format-native infinite default (0).
+export function decodeApngLoop(file: Uint8Array): number {
+	return UPNG.decode(toArrayBuffer(file)).tabs.acTL?.num_plays ?? 0;
+}
+
+export async function decodeLoop(
+	file: Uint8Array,
+	format: AnimatedFormatCase["format"],
+): Promise<number> {
+	if (format === "apng") {
+		return decodeApngLoop(file);
+	}
+
+	return (await decodeWebpFrames(file)).loop;
+}
+
 export async function decodeAnimation(file: Uint8Array, format: AnimatedFormatCase["format"]) {
 	if (format === "apng") {
 		return decodeApng(file);

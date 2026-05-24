@@ -1,12 +1,14 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { expect, test } from "vite-plus/test";
+import { describe, expect, test } from "vite-plus/test";
 
 import {
+	animatedFormatCases,
 	createNoisyFixture,
 	decodeApng,
 	decodeApngFrames,
+	decodeLoop,
 	decodeWebpFrames,
 	fixtureSkeletonPath,
 	importPackageApi,
@@ -358,6 +360,42 @@ test("packed package API defaults the WebP alias to lossless output", async () =
 		await rm(tempDirectory, { force: true, recursive: true });
 	}
 });
+
+describe.each(animatedFormatCases)(
+	"packed package API embeds and reports the loop count for $format output",
+	({ extension, format }) => {
+		test("an explicit loop count is baked into the file and reported on the result", async () => {
+			const tempDirectory = await mkdtemp(
+				path.join(os.tmpdir(), `spine2img-api-loop-${format}-`),
+			);
+
+			try {
+				const playOncePath = path.join(tempDirectory, `play-once.${extension}`);
+				const infinitePath = path.join(tempDirectory, `infinite.${extension}`);
+				const packageApi = await importPackageApi();
+				const playOnce = await packageApi.renderSpine({
+					format,
+					loop: 1,
+					outputPath: playOncePath,
+					skeletonPath: fixtureSkeletonPath,
+				});
+				// Omitting `loop` keeps the historical infinite-loop default, unchanged.
+				const infinite = await packageApi.renderSpine({
+					format,
+					outputPath: infinitePath,
+					skeletonPath: fixtureSkeletonPath,
+				});
+
+				expect(playOnce.loop).toBe(1);
+				expect(infinite.loop).toBe(0);
+				expect(await decodeLoop(await readFile(playOncePath), format)).toBe(1);
+				expect(await decodeLoop(await readFile(infinitePath), format)).toBe(0);
+			} finally {
+				await rm(tempDirectory, { force: true, recursive: true });
+			}
+		});
+	},
+);
 
 test("packed package API can override viewport size while keeping transparency by default", async () => {
 	const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-api-viewport-"));

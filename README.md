@@ -81,6 +81,7 @@ spine2img render fixtures/tracer-bullet/box.json out/box.apng --json
 	"outputPath": "out/box.apng",
 	"animationName": "pulse",
 	"fps": 30,
+	"loop": 0,
 	"lossless": true
 }
 ```
@@ -93,12 +94,35 @@ For lossy WebP output, the JSON result also includes `quality`:
 	"outputPath": "out/box.webp",
 	"animationName": "pulse",
 	"fps": 30,
+	"loop": 0,
 	"lossless": false,
 	"quality": 80
 }
 ```
 
 Without `--overwrite`, the CLI fails if the output path already exists.
+
+## Looping
+
+By default every output loops forever — the same behavior as before. To play an animation a fixed number of times, set a **loop count**: `0` means infinite (the default), `1` plays once and rests on the final frame, and `N` plays exactly `N` times. This is the format's own loop count (APNG's `acTL` `num_plays`, WebP's loop field), so it behaves identically for both formats and is reported back on the result as `loop`.
+
+A single render targets one animation, so it takes a plain scalar count — `loop` in the library and `--loop` on the CLI:
+
+```ts
+const result = await renderSpine({
+	skeletonPath: "fixtures/tracer-bullet/box.json",
+	outputPath: "out/press.webp",
+	loop: 1, // play once, then hold the end pose
+});
+
+console.log(result.loop); // 1
+```
+
+```bash
+spine2img render fixtures/tracer-bullet/box.json out/press.webp --loop 1
+```
+
+`loop` is the one knob for both seamless loops and one-shots: leave it at the `0` default for a seamless idle/hover that returns to its start pose, and set `1` for a one-shot whose end pose differs from its start so it does not visibly snap back on every cycle. An invalid count (negative, fractional, `NaN`, or `Infinity`) is rejected up front with a typed `RenderOptionValidationError`. For a single-frame animation the option is inert — there is nothing to loop, so a still image is written unchanged.
 
 ## Batch rendering
 

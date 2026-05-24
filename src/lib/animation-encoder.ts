@@ -2,6 +2,9 @@ export interface EncodeAnimatedImageOptions {
 	delaysMs: number[];
 	frames: ArrayBuffer[];
 	height: number;
+	// The format-native loop count: `0` = infinite, `1` = play once, `N` = N plays.
+	// Validated upstream by the loop resolver, so encoders consume it as-is.
+	loop: number;
 	lossless: boolean;
 	quality?: number;
 	width: number;

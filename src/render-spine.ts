@@ -9,6 +9,7 @@ import { renderVariation } from "#/lib/render-variation.ts";
 import { resolveAnimatedImageEncoder } from "#/lib/resolve-animated-image-encoder.ts";
 import { resolveEncodeOptions } from "#/lib/resolve-encode-options.ts";
 import { resolveFormat, type ResolvedOutputFormat } from "#/lib/resolve-format.ts";
+import { resolveLoop } from "#/lib/resolve-loop.ts";
 import { resolveSpineInputs } from "#/lib/resolve-spine-inputs.ts";
 import { validateExplicitDimension } from "#/lib/validate-dimension.ts";
 import { writeOutputFile } from "#/lib/write-output-file.ts";
@@ -26,6 +27,9 @@ export interface RenderSpineOptions<TOutputPath extends string = string> {
 	fps?: number;
 	format?: OutputFormat;
 	height?: number;
+	// The loop count for this animation: `0` = infinite (default), `1` = play once,
+	// `N` = N plays. A single render targets one animation, so this is a plain scalar.
+	loop?: number;
 	lossless?: boolean;
 	outputPath: TOutputPath;
 	overwrite?: boolean;
@@ -43,6 +47,8 @@ interface RenderSpineResultBase<TFormat extends OutputFormat> {
 	fps: number;
 	frameCount: number;
 	height: number;
+	// The resolved loop count baked into the output (`0` = infinite).
+	loop: number;
 	outputPath: string;
 	skeletonPath: string;
 	skinName?: string;
@@ -81,6 +87,7 @@ export async function renderSpine(options: RenderSpineOptions): Promise<RenderSp
 		lossless: options.lossless,
 		quality: options.quality,
 	});
+	const loop = resolveLoop(options.loop);
 	const encoder = resolveAnimatedImageEncoder(format);
 	const inputs = resolveSpineInputs({
 		atlasPath: options.atlasPath,
@@ -111,6 +118,7 @@ export async function renderSpine(options: RenderSpineOptions): Promise<RenderSp
 			format,
 			fps,
 			height: explicitHeight,
+			loop,
 			outputPath,
 			resolved: variation,
 			skeletonPath,
