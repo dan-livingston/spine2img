@@ -32,3 +32,4 @@ export {
 	type RenderSpineVariationsOptions,
 	type RenderSpineVariationsResult,
 } from "#/render-spine-variations.ts";
+export { type LoopPolicy } from "#/lib/resolve-loop.ts";

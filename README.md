@@ -124,7 +124,45 @@ spine2img render fixtures/tracer-bullet/box.json out/press.webp --loop 1
 
 `loop` is the one knob for both seamless loops and one-shots: leave it at the `0` default for a seamless idle/hover that returns to its start pose, and set `1` for a one-shot whose end pose differs from its start so it does not visibly snap back on every cycle. An invalid count (negative, fractional, `NaN`, or `Infinity`) is rejected up front with a typed `RenderOptionValidationError`. For a single-frame animation the option is inert — there is nothing to loop, so a still image is written unchanged.
 
-Batch rendering takes the same scalar: `--loop` (CLI) / `loop` (library) on `render-all` applies one count to **every** variation in the run, reported back on each `succeeded` entry. (Per-animation loop patterns are a separate feature — see [batch rendering](#batch-rendering).)
+### Batch loop policy
+
+A single render targets one animation, but `render-all` renders a whole batch of mixed character — seamless idles and hovers alongside one-shot presses and transitions — so it takes a **policy** instead of a bare count. The policy is either the same scalar (applied to every variation) or a `{ default, once, infinite }` object:
+
+```ts
+await renderSpineVariations({
+	skeletonPath: "button.json",
+	outputDir: "out/button",
+	loop: {
+		default: 1, // everything plays once...
+		infinite: ["*Idle*", "*Hover*"], // ...except the seamless families
+	},
+});
+```
+
+`once` globs resolve to count `1`, `infinite` globs to count `0`, and every animation matched by neither falls back to `default` (itself `0` when omitted). A bare number is shorthand for `{ default: <n> }`, so `loop: 1` still means "play the whole batch once". The resolved count is keyed on the **animation name only** — loop intent is identical across skins — and is reported on each `succeeded` entry just like a single render.
+
+On the CLI the same policy is three flags that desugar onto it: `--loop <count>` is the default, and the repeatable `--loop-once <glob>` / `--loop-infinite <glob>` are the binary overrides.
+
+```bash
+# Mostly one-shots: play once by default, but keep idle/hover looping.
+spine2img render-all button.json out/button \
+  --loop 1 \
+  --loop-infinite '*Idle*' --loop-infinite '*Hover*'
+
+# Mostly loops: keep the infinite default, mark just the one-shots.
+spine2img render-all button.json out/button \
+  --loop-once '*Press*' --loop-once '*FadeOff*'
+```
+
+Glob matching is deliberately strict:
+
+- **Anchored** to the whole name — `Idle` matches only the animation literally named `Idle`; use `*Idle*` for the family.
+- **Case-sensitive** — `*Idle*` does not match `idle`.
+- `*` **crosses `/`** — Spine grouping separators are treated as part of a flat name, so `*Idle*` still matches a grouped `group/IconIdle`.
+
+Beyond `*`, patterns are full [picomatch](https://github.com/micromatch/picomatch) globs, so `?` (one character), character classes (`[A-Z]`), brace alternation (`{press,fadeOff}`), and leading-`!` negation work too. An animation whose literal name contains one of these metacharacters must escape it (e.g. `Icon\[1\]`) to match itself.
+
+The policy resolves up front, before any file is written, and fails loudly rather than guessing. A pattern that matches no animation (`loop-pattern-no-match`) and an animation two patterns disagree on (`loop-pattern-conflict`, e.g. a `once` and an `infinite` both claiming it) each abort the whole run with a typed `RenderOptionValidationError` and leave nothing on disk. Overlapping patterns that agree on a count are fine; precedence is order-independent by design, so genuine disagreement is an error rather than a silent winner.
 
 ## Batch rendering
 
@@ -209,7 +247,7 @@ spine2img render-all fixtures/render-all/button.json out/button \
   --tight
 ```
 
-The shared options — `--fps`, `--background`, `--width`/`--height`, `--format`, `--loop` (one loop count for every file, default `0` = infinite; see [looping](#looping)), `--no-lossless`, `--quality`, and `--overwrite` — all apply uniformly to every variation in the run.
+The shared options — `--fps`, `--background`, `--width`/`--height`, `--format`, `--loop` / `--loop-once` / `--loop-infinite` (the loop policy; default `0` = infinite, see [batch loop policy](#batch-loop-policy)), `--no-lossless`, `--quality`, and `--overwrite` — all apply to the run. Every option but the loop policy applies uniformly; the loop policy classifies per animation name.
 
 ### Failure model and exit codes
 

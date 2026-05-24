@@ -14,7 +14,7 @@ import { renderVariation } from "#/lib/render-variation.ts";
 import { resolveAnimatedImageEncoder } from "#/lib/resolve-animated-image-encoder.ts";
 import { resolveBatchFormat } from "#/lib/resolve-batch-format.ts";
 import { resolveEncodeOptions } from "#/lib/resolve-encode-options.ts";
-import { resolveLoop } from "#/lib/resolve-loop.ts";
+import { INFINITE_LOOP, type LoopPolicy, resolveLoopPolicy } from "#/lib/resolve-loop.ts";
 import { resolveSpineInputs } from "#/lib/resolve-spine-inputs.ts";
 import { validateExplicitDimension } from "#/lib/validate-dimension.ts";
 import { writeOutputFile } from "#/lib/write-output-file.ts";
@@ -34,11 +34,14 @@ export interface RenderSpineVariationsOptions {
 	// Forces the canvas height uniformly across every output. Overrides both the
 	// registered canvas and `--tight` auto-fit.
 	height?: number;
-	// One loop count applied to every variation in the run: `0` = infinite
-	// (default), `1` = play once, `N` = N plays. A scalar uniformly — per-animation
-	// patterns land in a later slice. Resolved through the same validator as single
-	// render, so a bad count aborts the whole run up front.
-	loop?: number;
+	// Loop policy for the run. A scalar count applies uniformly (`0` = infinite, the
+	// default; `1` = play once; `N` = N plays). A `{ default, once, infinite }` object
+	// classifies animations by glob: `once` globs play once, `infinite` globs loop
+	// forever, and unmatched animations fall back to `default`. Loop is keyed on
+	// animation name only, so the policy resolves once and applies across every skin.
+	// Resolved up front, so a bad count, a dead pattern, or a conflicting assignment
+	// aborts the whole run before any file is written.
+	loop?: LoopPolicy;
 	// Lossy WebP opt-out/quality, applied uniformly to every variation. `lossless:
 	// false` or a `quality` on a non-WebP run is rejected with the same typed
 	// validation error as single-render.
@@ -86,6 +89,10 @@ type VariationFailure = RenderSpineVariationsResult["failed"][number];
 // skin's registered canvas can be measured across all of its animations before any
 // of them render.
 interface PlannedVariation {
+	// The per-animation loop count resolved from the policy, fixed at plan time so the
+	// render loop just carries it through. Keyed on animation name, identical across
+	// every skin this animation renders under.
+	loop: number;
 	outputPath: string;
 	resolved: ResolvedVariation;
 	skinName?: string;
@@ -145,9 +152,6 @@ export async function runSpineVariations<THandle>(
 		quality: options.quality,
 	});
 	const encoder = resolveAnimatedImageEncoder(format);
-	// One scalar count for the whole run, validated up front alongside the encode
-	// options so a bad `--loop` aborts before any file is written.
-	const loop = resolveLoop(options.loop);
 	const inputs = resolveSpineInputs({
 		atlasPath: options.atlasPath,
 		skeletonPath: options.skeletonPath,
@@ -181,6 +185,15 @@ export async function runSpineVariations<THandle>(
 			skinNames: skeleton.skinNames,
 		});
 
+		// Resolve the loop policy against the animation names as an upfront fail-fast
+		// gate — alongside the unknown-skin, no-animations, and collision gates — so a
+		// bad default, a pattern matching nothing, or a conflicting assignment aborts
+		// the whole run before any file is written. Ordered after the unknown-skin gate
+		// so an unknown requested skin (the more fundamental setup mistake) is the error
+		// the user sees first; the policy keys on animation name only, independent of
+		// skin selection, so it resolves freely here and covers every skin.
+		const loopCounts = resolveLoopPolicy(options.loop, skeleton.animationNames);
+
 		// Resolve every variation (validating animation/skin names) and derive its
 		// target path (rejecting any unsafe name), grouping by skin. enumerateVariations
 		// is skin-major, and a Map preserves first-seen key order, so the groups keep
@@ -193,6 +206,9 @@ export async function runSpineVariations<THandle>(
 				skinName: variation.skinName,
 			});
 			const planned: PlannedVariation = {
+				// Keyed on the enumerated animation name, which is exactly what the
+				// policy resolved against — every name has an entry in the map.
+				loop: loopCounts.get(variation.animationName) ?? INFINITE_LOOP,
 				outputPath: deriveOutputPath({
 					animationName: resolved.animationName,
 					format,
@@ -259,9 +275,9 @@ export async function runSpineVariations<THandle>(
 						format,
 						fps,
 						height,
-						// One run-wide count applied to every variation; per-animation
-						// patterns land in a later slice.
-						loop,
+						// The per-animation count the policy resolved for this name,
+						// identical across every skin it renders under.
+						loop: planned.loop,
 						outputPath: planned.outputPath,
 						resolved: planned.resolved,
 						skeletonPath: inputs.skeletonPath,

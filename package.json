@@ -44,11 +44,13 @@
 		"@esotericsoftware/spine-canvas": "^4.3.3",
 		"@napi-rs/canvas": "^1.0.0",
 		"commander": "^14.0.3",
+		"picomatch": "^4.0.4",
 		"sharp": "^0.34.5",
 		"upng-js": "^2.1.0"
 	},
 	"devDependencies": {
 		"@types/node": "^25.6.2",
+		"@types/picomatch": "^4.0.3",
 		"@typescript/native-preview": "7.0.0-dev.20260509.2",
 		"bumpp": "^11.1.0",
 		"typescript": "^6.0.3",

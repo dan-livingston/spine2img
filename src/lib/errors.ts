@@ -16,6 +16,8 @@ export type OutputPathErrorCode = "unsafe-output-path";
 export type RenderOptionValidationErrorCode =
 	| "invalid-loop"
 	| "invalid-quality"
+	| "loop-pattern-conflict"
+	| "loop-pattern-no-match"
 	| "unsupported-lossy-output"
 	| "unsupported-quality-output";
 

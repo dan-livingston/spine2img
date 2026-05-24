@@ -13,8 +13,9 @@ function parseOutputFormat(value: string): "apng" | "webp" {
 	throw new InvalidArgumentError(`format must be "apng" or "webp". Received ${value}.`);
 }
 
-// Accumulates a repeatable `--skin` flag into an array.
-function collectSkin(value: string, previous: string[]): string[] {
+// Accumulates a repeatable flag (`--skin`, `--loop-once`, `--loop-infinite`) into an
+// array.
+function collect(value: string, previous: string[]): string[] {
 	return [...previous, value];
 }
 
@@ -99,7 +100,7 @@ export function createCli(): Command {
 				.option(
 					"--skin <skin>",
 					"render only this skin (repeatable); defaults to every named skin",
-					collectSkin,
+					collect,
 					[],
 				)
 				.option(
@@ -123,8 +124,20 @@ export function createCli(): Command {
 				.option("--fps <fps>", "frames per second", Number)
 				.option(
 					"--loop <count>",
-					"loop count to embed in every file (0 = infinite, the default)",
+					"default loop count for every file (0 = infinite, the default)",
 					Number,
+				)
+				.option(
+					"--loop-once <glob>",
+					"glob of animation names to play once (loop count 1; repeatable)",
+					collect,
+					[],
+				)
+				.option(
+					"--loop-infinite <glob>",
+					"glob of animation names to loop forever (loop count 0; repeatable)",
+					collect,
+					[],
 				)
 				.option("--no-lossless", "opt into lossy WebP output")
 				.option("--quality <quality>", "lossy WebP quality from 0 to 100", Number)
@@ -143,7 +156,13 @@ export function createCli(): Command {
 						format: options.format,
 						fps: options.fps,
 						height: options.height,
-						loop: options.loop,
+						// Thin desugaring onto the library policy: `--loop` is the
+						// default, `--loop-once`/`--loop-infinite` the binary overrides.
+						loop: {
+							default: options.loop,
+							infinite: options.loopInfinite,
+							once: options.loopOnce,
+						},
 						lossless: options.lossless,
 						overwrite: options.overwrite,
 						quality: options.quality,

@@ -21,6 +21,9 @@ importers:
       commander:
         specifier: ^14.0.3
         version: 14.0.3
+      picomatch:
+        specifier: ^4.0.4
+        version: 4.0.4
       sharp:
         specifier: ^0.34.5
         version: 0.34.5
@@ -31,6 +34,9 @@ importers:
       '@types/node':
         specifier: ^25.6.2
         version: 25.9.1
+      '@types/picomatch':
+        specifier: ^4.0.3
+        version: 4.0.3
       '@typescript/native-preview':
         specifier: 7.0.0-dev.20260509.2
         version: 7.0.0-dev.20260509.2
@@ -701,6 +707,9 @@ packages:
 
   '@types/node@25.9.1':
     resolution: {integrity: sha512-xfrlY7UD5rMJk3ZVJP8BNzS28J36YJg+xp+LPXV1TdWxr8uMH5A860QNxYDGQe/ylDSgjxE52Q9VnO7p75tJxg==}
+
+  '@types/picomatch@4.0.3':
+    resolution: {integrity: sha512-iG0T6+nYJ9FAPmx9SsUlnwcq1ZVRuCXcVEvWnntoPlrOpwtSTKNDC9uVAxTsC3PUvJ+99n4RpAcNgBbHX3JSnQ==}
 
   '@typescript/native-preview-darwin-arm64@7.0.0-dev.20260509.2':
     resolution: {integrity: sha512-oG9KahiCpx4q70Ood/rRJhYio4oIMHEHfX0g0LhfenlSIjIonitZWjUmUVG9N9q1ev9QWcM8pWpDrGGP0Osp3Q==}
@@ -1596,6 +1605,8 @@ snapshots:
   '@types/node@25.9.1':
     dependencies:
       undici-types: 7.24.6
+
+  '@types/picomatch@4.0.3': {}
 
   '@typescript/native-preview-darwin-arm64@7.0.0-dev.20260509.2':
     optional: true

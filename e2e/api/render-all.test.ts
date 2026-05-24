@@ -376,6 +376,132 @@ describe.each(animatedFormatCases)(
 	},
 );
 
+test("packed package API render-all classifies animations by glob into per-animation loop counts", async () => {
+	const tempDirectory = await mkdtemp(
+		path.join(os.tmpdir(), "spine2img-api-render-all-loop-policy-"),
+	);
+
+	try {
+		const outputDir = path.join(tempDirectory, "out");
+		const packageApi = await importPackageApi();
+		// Mostly-one-shot batch: default play-once, except the seamless idle/hover
+		// families flipped back to infinite. Loop is keyed on animation name, so the
+		// same classification must hold across every skin.
+		const result = await packageApi.renderSpineVariations({
+			loop: { default: 1, infinite: ["*idle*", "*hover*"] },
+			outputDir,
+			skeletonPath: renderAllFixtureSkeletonPath,
+		});
+
+		expect(result.succeeded).toHaveLength(6);
+
+		// The resolved count surfaces per animation on every entry, both skins...
+		const resolved = Object.fromEntries(
+			result.succeeded.map((entry) => [
+				`${entry.skinName}/${entry.animationName}`,
+				entry.loop,
+			]),
+		);
+		expect(resolved).toEqual({
+			"alt/hover": 0,
+			"alt/idle": 0,
+			"alt/press": 1,
+			"wide/hover": 0,
+			"wide/idle": 0,
+			"wide/press": 1,
+		});
+
+		// ...and every file on disk decodes to the count its name resolved to.
+		for (const entry of result.succeeded) {
+			const expectedLoop = entry.animationName === "press" ? 1 : 0;
+			expect(await decodeLoop(await readFile(entry.outputPath), "apng")).toBe(expectedLoop);
+		}
+	} finally {
+		await rm(tempDirectory, { force: true, recursive: true });
+	}
+});
+
+test("packed package API render-all aborts before writing when a loop pattern matches nothing", async () => {
+	const tempDirectory = await mkdtemp(
+		path.join(os.tmpdir(), "spine2img-api-render-all-loop-no-match-"),
+	);
+
+	try {
+		const outputDir = path.join(tempDirectory, "out");
+		const packageApi = await importPackageApi();
+
+		let error: unknown;
+
+		try {
+			await packageApi.renderSpineVariations({
+				loop: { infinite: ["*nope*"] },
+				outputDir,
+				skeletonPath: renderAllFixtureSkeletonPath,
+			});
+		} catch (caught) {
+			error = caught;
+		}
+
+		expect(error).toBeInstanceOf(packageApi.RenderOptionValidationError);
+		expect(error).toMatchObject({
+			code: "loop-pattern-no-match",
+			message: 'Loop pattern "*nope*" matched no animations.',
+		});
+
+		// Fail-fast: the dead pattern aborts the whole run, so nothing is written.
+		let listing: string[] | undefined;
+		try {
+			listing = await readdir(outputDir);
+		} catch {
+			listing = undefined;
+		}
+		expect(listing).toBeUndefined();
+	} finally {
+		await rm(tempDirectory, { force: true, recursive: true });
+	}
+});
+
+test("packed package API render-all aborts before writing when patterns conflict on an animation", async () => {
+	const tempDirectory = await mkdtemp(
+		path.join(os.tmpdir(), "spine2img-api-render-all-loop-conflict-"),
+	);
+
+	try {
+		const outputDir = path.join(tempDirectory, "out");
+		const packageApi = await importPackageApi();
+
+		let error: unknown;
+
+		try {
+			// `idle` is claimed play-once by `*idle*` and loop-forever by the exact
+			// `idle` — a genuine disagreement, so the run must abort naming both.
+			await packageApi.renderSpineVariations({
+				loop: { infinite: ["idle"], once: ["*idle*"] },
+				outputDir,
+				skeletonPath: renderAllFixtureSkeletonPath,
+			});
+		} catch (caught) {
+			error = caught;
+		}
+
+		expect(error).toBeInstanceOf(packageApi.RenderOptionValidationError);
+		expect(error).toMatchObject({
+			code: "loop-pattern-conflict",
+			message: 'Animation "idle" is matched by conflicting loop patterns: "*idle*", "idle".',
+		});
+
+		let listing: string[] | undefined;
+		try {
+			listing = await readdir(outputDir);
+		} catch {
+			listing = undefined;
+		}
+		expect(listing).toBeUndefined();
+	} finally {
+		await rm(tempDirectory, { force: true, recursive: true });
+	}
+});
+
 test("packed package API render-all rejects an invalid loop count before writing", async () => {
 	const tempDirectory = await mkdtemp(
 		path.join(os.tmpdir(), "spine2img-api-render-all-bad-loop-"),

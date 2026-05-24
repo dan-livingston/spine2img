@@ -179,6 +179,120 @@ test("packed package CLI render-all --loop embeds the count in every file", asyn
 	}
 });
 
+test("packed package CLI render-all desugars repeatable --loop-once / --loop-infinite", async () => {
+	const tempDirectory = await mkdtemp(
+		path.join(os.tmpdir(), "spine2img-cli-render-all-loop-policy-"),
+	);
+
+	try {
+		// `--loop` is the default; repeated `--loop-infinite` flips the seamless
+		// families back to infinite while the rest play once.
+		const infiniteDir = path.join(tempDirectory, "infinite-overrides");
+		const { stdout: infiniteStdout } = await runCli([
+			"render-all",
+			renderAllFixtureSkeletonPath,
+			infiniteDir,
+			"--skin",
+			"alt",
+			"--loop",
+			"1",
+			"--loop-infinite",
+			"*idle*",
+			"--loop-infinite",
+			"*hover*",
+			"--json",
+		]);
+		const infinite = JSON.parse(infiniteStdout) as {
+			succeeded: { animationName: string; loop: number; outputPath: string }[];
+		};
+		const infiniteByName = Object.fromEntries(
+			infinite.succeeded.map((entry) => [entry.animationName, entry.loop]),
+		);
+		expect(infiniteByName).toEqual({ hover: 0, idle: 0, press: 1 });
+		for (const entry of infinite.succeeded) {
+			const expectedLoop = entry.animationName === "press" ? 1 : 0;
+			expect(decodeApngLoop(await readFile(entry.outputPath))).toBe(expectedLoop);
+		}
+
+		// Repeated `--loop-once` over the infinite default marks just the one-shots.
+		const onceDir = path.join(tempDirectory, "once-overrides");
+		const { stdout: onceStdout } = await runCli([
+			"render-all",
+			renderAllFixtureSkeletonPath,
+			onceDir,
+			"--skin",
+			"alt",
+			"--loop-once",
+			"*idle*",
+			"--loop-once",
+			"*hover*",
+			"--json",
+		]);
+		const once = JSON.parse(onceStdout) as {
+			succeeded: { animationName: string; loop: number }[];
+		};
+		expect(
+			Object.fromEntries(once.succeeded.map((entry) => [entry.animationName, entry.loop])),
+		).toEqual({ hover: 1, idle: 1, press: 0 });
+	} finally {
+		await rm(tempDirectory, { force: true, recursive: true });
+	}
+});
+
+test("packed package CLI render-all exits non-zero up front on a bad loop policy", async () => {
+	const tempDirectory = await mkdtemp(
+		path.join(os.tmpdir(), "spine2img-cli-render-all-bad-policy-"),
+	);
+	const cases = [
+		{
+			args: ["--loop-infinite", "*nope*"],
+			message: 'Loop pattern "*nope*" matched no animations.',
+			name: "no-match",
+		},
+		{
+			args: ["--loop-once", "*idle*", "--loop-infinite", "idle"],
+			message: 'Animation "idle" is matched by conflicting loop patterns: "*idle*", "idle".',
+			name: "conflict",
+		},
+	];
+
+	try {
+		for (const testCase of cases) {
+			const outputDir = path.join(tempDirectory, testCase.name);
+
+			let error: unknown;
+
+			try {
+				await runCli([
+					"render-all",
+					renderAllFixtureSkeletonPath,
+					outputDir,
+					"--skin",
+					"alt",
+					...testCase.args,
+				]);
+			} catch (caught) {
+				error = caught;
+			}
+
+			expect(error).toBeInstanceOf(Error);
+			expect((error as { code?: number }).code).not.toBe(0);
+			expect((error as { stderr?: string }).stderr).toContain(testCase.message);
+
+			// Fail-fast: nothing was rendered, so the output directory was never created.
+			let listing: string[] | undefined;
+			try {
+				listing = await readdir(outputDir);
+			} catch {
+				listing = undefined;
+			}
+			expect(listing).toBeUndefined();
+		}
+	} finally {
+		await rm(tempDirectory, { force: true, recursive: true });
+	}
+});
+
 test("packed package CLI render-all rejects an invalid --loop up front", async () => {
 	const tempDirectory = await mkdtemp(
 		path.join(os.tmpdir(), "spine2img-cli-render-all-bad-loop-"),
