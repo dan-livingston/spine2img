@@ -90,22 +90,30 @@ export async function renderSpine(options: RenderSpineOptions): Promise<RenderSp
 
 	await assertOutputWritable(outputPath, overwrite);
 
-	const scene = await canvasSpineRenderer.loadScene({
-		animationName: options.animationName,
+	const assets = await canvasSpineRenderer.loadAssets({
 		atlasPath,
 		skeletonPath,
-		skinName: options.skinName,
 	});
 
 	try {
-		const samples = createSamples(scene.animationDurationSeconds, fps);
-		const bounds = canvasSpineRenderer.measureBounds(scene, samples);
+		const variation = canvasSpineRenderer.resolveVariation(assets, {
+			animationName: options.animationName,
+			skinName: options.skinName,
+		});
+		const samples = createSamples(variation.animationDurationSeconds, fps);
+		const bounds = canvasSpineRenderer.measureBounds(assets, variation, samples);
 		const viewport: Viewport = {
 			backgroundColor,
 			height: explicitHeight ?? bounds.height,
 			width: explicitWidth ?? bounds.width,
 		};
-		const frames = canvasSpineRenderer.renderFrames(scene, samples, bounds, viewport);
+		const frames = canvasSpineRenderer.renderFrames(
+			assets,
+			variation,
+			samples,
+			bounds,
+			viewport,
+		);
 		const encoded = await encoder.encode({
 			delaysMs: samples.map((sample) => sample.delayMs),
 			frames,
@@ -119,7 +127,7 @@ export async function renderSpine(options: RenderSpineOptions): Promise<RenderSp
 		await writeOutputFile(outputPath, encoded, overwrite);
 
 		return {
-			animationName: scene.animationName,
+			animationName: variation.animationName,
 			atlasPath,
 			durationMs: samples.reduce((total, sample) => total + sample.delayMs, 0),
 			format,
@@ -128,12 +136,12 @@ export async function renderSpine(options: RenderSpineOptions): Promise<RenderSp
 			height: viewport.height,
 			outputPath,
 			skeletonPath,
-			skinName: scene.skinName,
+			skinName: variation.skinName,
 			width: viewport.width,
 			...encodeOptions,
 		};
 	} finally {
-		canvasSpineRenderer.disposeScene(scene);
+		canvasSpineRenderer.disposeAssets(assets);
 	}
 }
 

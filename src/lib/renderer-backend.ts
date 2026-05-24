@@ -1,7 +1,18 @@
-export interface LoadedScene<THandle> {
-	animationDurationSeconds: number;
-	animationName: string;
+export interface LoadedAssets<THandle> {
 	handle: THandle;
+}
+
+export interface RenderVariation {
+	animationName: string;
+	skinName?: string;
+}
+
+export interface ResolvedVariation extends RenderVariation {
+	animationDurationSeconds: number;
+}
+
+export interface VariationSelection {
+	animationName?: string;
 	skinName?: string;
 }
 
@@ -26,18 +37,25 @@ export interface Viewport {
 }
 
 export interface RendererBackend<THandle> {
-	disposeScene(scene: LoadedScene<THandle>): void;
-	loadScene(options: {
-		animationName?: string;
+	disposeAssets(assets: LoadedAssets<THandle>): void;
+	loadAssets(options: {
 		atlasPath: string;
 		skeletonPath: string;
-		skinName?: string;
-	}): Promise<LoadedScene<THandle>>;
-	measureBounds(scene: LoadedScene<THandle>, samples: Sample[]): Bounds;
+	}): Promise<LoadedAssets<THandle>>;
+	measureBounds(
+		assets: LoadedAssets<THandle>,
+		variation: RenderVariation,
+		samples: Sample[],
+	): Bounds;
 	renderFrames(
-		scene: LoadedScene<THandle>,
+		assets: LoadedAssets<THandle>,
+		variation: RenderVariation,
 		samples: Sample[],
 		bounds: Bounds,
 		viewport: Viewport,
 	): ArrayBuffer[];
+	resolveVariation(
+		assets: LoadedAssets<THandle>,
+		selection: VariationSelection,
+	): ResolvedVariation;
 }

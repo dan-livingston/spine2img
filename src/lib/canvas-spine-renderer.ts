@@ -1,8 +1,11 @@
 import type {
 	Bounds,
-	LoadedScene,
+	LoadedAssets,
 	RendererBackend,
+	RenderVariation,
+	ResolvedVariation,
 	Sample,
+	VariationSelection,
 	Viewport,
 } from "#/lib/renderer-backend.ts";
 
@@ -30,23 +33,21 @@ import { createCanvas, loadImage } from "@napi-rs/canvas";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-interface CanvasSceneHandle {
+interface CanvasAssetsHandle {
 	atlas: TextureAtlas;
 	skeletonData: Skeleton["data"];
-	skinName?: string;
+	skeletonPath: string;
 }
 
-class CanvasSpineRenderer implements RendererBackend<CanvasSceneHandle> {
-	disposeScene(scene: LoadedScene<CanvasSceneHandle>): void {
-		scene.handle.atlas.dispose();
+class CanvasSpineRenderer implements RendererBackend<CanvasAssetsHandle> {
+	disposeAssets(assets: LoadedAssets<CanvasAssetsHandle>): void {
+		assets.handle.atlas.dispose();
 	}
 
-	async loadScene(options: {
-		animationName?: string;
+	async loadAssets(options: {
 		atlasPath: string;
 		skeletonPath: string;
-		skinName?: string;
-	}): Promise<LoadedScene<CanvasSceneHandle>> {
+	}): Promise<LoadedAssets<CanvasAssetsHandle>> {
 		// Read first, because it's cheap and fails fast.
 		const skeletonSource = await readTextAsset("skeleton", options.skeletonPath);
 		const atlas = await loadTextureAtlas(options.atlasPath);
@@ -62,45 +63,49 @@ class CanvasSpineRenderer implements RendererBackend<CanvasSceneHandle> {
 			throw toSkeletonLoadError(options.skeletonPath, options.atlasPath, error);
 		}
 
-		try {
-			const animation = selectAnimation(
-				options.skeletonPath,
+		return {
+			handle: {
+				atlas,
 				skeletonData,
-				options.animationName,
-			);
-			const skinName = options.skinName
-				? selectNamedEntry({
-						availableNames: skeletonData.skins.map((skin) => skin.name),
-						requestedName: options.skinName,
-						selectionType: "skin",
-						skeletonPath: options.skeletonPath,
-					})
-				: undefined;
-
-			return {
-				animationDurationSeconds: animation.duration,
-				animationName: animation.name,
-				handle: {
-					atlas,
-					skeletonData,
-					skinName,
-				},
-				skinName,
-			};
-		} catch (error) {
-			atlas.dispose();
-			throw error;
-		}
+				skeletonPath: options.skeletonPath,
+			},
+		};
 	}
 
-	measureBounds(scene: LoadedScene<CanvasSceneHandle>, samples: Sample[]): Bounds {
+	resolveVariation(
+		assets: LoadedAssets<CanvasAssetsHandle>,
+		selection: VariationSelection,
+	): ResolvedVariation {
+		const { skeletonData, skeletonPath } = assets.handle;
+		const animation = selectAnimation(skeletonPath, skeletonData, selection.animationName);
+		const skinName = selection.skinName
+			? selectNamedEntry({
+					availableNames: skeletonData.skins.map((skin) => skin.name),
+					requestedName: selection.skinName,
+					selectionType: "skin",
+					skeletonPath,
+				})
+			: undefined;
+
+		return {
+			animationDurationSeconds: animation.duration,
+			animationName: animation.name,
+			skinName,
+		};
+	}
+
+	measureBounds(
+		assets: LoadedAssets<CanvasAssetsHandle>,
+		variation: RenderVariation,
+		samples: Sample[],
+	): Bounds {
 		let minX = Number.POSITIVE_INFINITY;
 		let minY = Number.POSITIVE_INFINITY;
 		let maxX = Number.NEGATIVE_INFINITY;
 		let maxY = Number.NEGATIVE_INFINITY;
 
 		for (const sample of samples) {
-			const skeleton = poseSkeleton(scene, sample.timeSeconds);
+			const skeleton = poseSkeleton(assets, variation, sample.timeSeconds);
 			const offset = new Vector2();
 			const size = new Vector2();
 			skeleton.getBounds(offset, size, []);
@@ -122,13 +127,14 @@ class CanvasSpineRenderer implements RendererBackend<CanvasSceneHandle> {
 	}
 
 	renderFrames(
-		scene: LoadedScene<CanvasSceneHandle>,
+		assets: LoadedAssets<CanvasAssetsHandle>,
+		variation: RenderVariation,
 		samples: Sample[],
 		bounds: Bounds,
 		viewport: Viewport,
 	): ArrayBuffer[] {
 		return samples.map((sample) => {
-			const skeleton = poseSkeleton(scene, sample.timeSeconds);
+			const skeleton = poseSkeleton(assets, variation, sample.timeSeconds);
 			const canvas = createCanvas(viewport.width, viewport.height);
 			const context = canvas.getContext("2d");
 
@@ -199,22 +205,28 @@ async function readTextAsset(assetType: "skeleton", assetPath: string): Promise<
 	}
 }
 
-function poseSkeleton(scene: LoadedScene<CanvasSceneHandle>, timeSeconds: number): Skeleton {
-	const skeleton = new Skeleton(scene.handle.skeletonData);
-	const animationState = new AnimationState(new AnimationStateData(scene.handle.skeletonData));
-	const selectedSkin = scene.handle.skinName
-		? scene.handle.skeletonData.findSkin(scene.handle.skinName)
-		: scene.handle.skeletonData.defaultSkin;
+function poseSkeleton(
+	assets: LoadedAssets<CanvasAssetsHandle>,
+	variation: RenderVariation,
+	timeSeconds: number,
+): Skeleton {
+	const { skeletonData } = assets.handle;
+	const skeleton = new Skeleton(skeletonData);
+	const animationState = new AnimationState(new AnimationStateData(skeletonData));
+	const selectedSkin = variation.skinName
+		? skeletonData.findSkin(variation.skinName)
+		: skeletonData.defaultSkin;
 
 	skeleton.scaleY = -1;
 
-	// scene.skinName was already validated against skeletonData.skins in loadScene,
-	// and we read from that same skeletonData here, so findSkin cannot miss.
+	// variation.skinName was already validated against skeletonData.skins in
+	// resolveVariation, and we read from that same skeletonData here, so findSkin
+	// cannot miss.
 	if (selectedSkin) {
 		skeleton.setSkin(selectedSkin);
 	}
 
-	animationState.setAnimation(0, scene.animationName, false);
+	animationState.setAnimation(0, variation.animationName, false);
 	animationState.update(timeSeconds);
 	skeleton.update(timeSeconds);
 	skeleton.setupPose();
