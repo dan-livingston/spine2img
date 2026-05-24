@@ -100,6 +100,156 @@ For lossy WebP output, the JSON result also includes `quality`:
 
 Without `--overwrite`, the CLI fails if the output path already exists.
 
+## Batch rendering
+
+A single render handles one animation. To export every state of a skeleton at once — for example all of a UI button's idle/hover/press animations across its skins — use the `renderSpineVariations` library function or the `spine2img render-all` CLI subcommand. Both render the full cross-product of **all animations × all skins** in one invocation, loading the skeleton, atlas, and textures once and rendering strictly sequentially to keep memory bounded.
+
+```ts
+import { renderSpineVariations } from "spine2img";
+
+const result = await renderSpineVariations({
+	skeletonPath: "fixtures/render-all/button.json",
+	atlasPath: "fixtures/render-all/button.atlas",
+	outputDir: "out/button",
+	format: "apng",
+	overwrite: true,
+});
+
+console.log(result.skinNames); // ["alt", "wide"] — the skins actually rendered
+console.log(result.succeeded.length); // 6 (3 animations × 2 skins)
+console.log(result.failed); // [] when everything rendered
+```
+
+```bash
+spine2img render-all fixtures/render-all/button.json out/button \
+  --atlas fixtures/render-all/button.atlas \
+  --overwrite
+```
+
+The skeleton in the example carries three animations (`idle`, `hover`, `press`) and two named skins (`alt`, `wide`), so the run writes six files and streams one progress line per variation followed by a summary:
+
+```
+Rendered alt/idle to out/button/alt/idle.apng (65x62, 30 frames @ 30 fps).
+Rendered alt/hover to out/button/alt/hover.apng (65x62, 15 frames @ 30 fps).
+Rendered alt/press to out/button/alt/press.apng (65x62, 8 frames @ 30 fps).
+Rendered wide/idle to out/button/wide/idle.apng (129x62, 30 frames @ 30 fps).
+Rendered wide/hover to out/button/wide/hover.apng (129x62, 15 frames @ 30 fps).
+Rendered wide/press to out/button/wide/press.apng (129x62, 8 frames @ 30 fps).
+Rendered 6 variations to out/button.
+```
+
+Every variation in a skin shares one canvas size (`alt` at `65x62`, `wide` at `129x62`) — that is the registered canvas at work — while the per-animation frame counts differ.
+
+### Skins and the cross-product
+
+`render-all` always renders **every** animation; the animation axis has no subset selector. Skins are the axis you narrow. By default the skin set is the skeleton's named skins, **excluding** the base `default` skin when named skins exist (so you do not get a directory of likely-incomplete base-only renders). If `default` is the only skin, it is used. If the skeleton has no skins at all, animations render skinless.
+
+Narrow the run to specific skins with a repeatable `--skin` flag (CLI) or a `skinNames` array (library). An unknown requested skin fails the whole run up front with a typed `SpineSelectionError`. `--skin default` forces the base skin explicitly, overriding the exclusion rule.
+
+```bash
+# Render only the "alt" skin's animations.
+spine2img render-all fixtures/render-all/button.json out/button \
+  --atlas fixtures/render-all/button.atlas \
+  --skin alt
+```
+
+```ts
+const result = await renderSpineVariations({
+	skeletonPath: "fixtures/render-all/button.json",
+	outputDir: "out/button",
+	skinNames: ["alt", "wide"], // omit or leave empty for every named skin
+});
+```
+
+### Output layout
+
+Files are written to `<outDir>/<skin>/<animation>.<ext>`, a collision-proof layout that groups each skin's states together. A `/` within an animation or skin name is preserved as real nested directories (Spine's own grouping convention); a `..` or absolute segment is rejected so a malformed asset name can never write outside `<outDir>`. A skinless skeleton degenerates to a flat `<outDir>/<animation>.<ext>` with no skin segment.
+
+Because the target is a directory with no extension to infer from, the format is `--format` / `format` if given and otherwise **APNG**. One format applies to the whole run — a batch is all-APNG or all-WebP — and generated files use the matching `.apng` or `.webp` extension. The lossless/quality options behave exactly as for single render: WebP is lossless by default, `--no-lossless` opts into lossy WebP, and `--quality` (0–100, default 80) applies only to lossy WebP.
+
+### Registered canvas and `--tight`
+
+By default every animation in a skin renders on a uniform, **registered** canvas: the union of that skin's animation bounds with a shared origin offset, so all of a skin's states come out identically sized and pixel-aligned and can be swapped in a UI without any layout shift. The union is computed per skin (skins may legitimately differ in extent) via a cheap pose-only measure pass that retains no frame buffers.
+
+Pass `--tight` (CLI) / `tight: true` (library) to opt back into per-animation auto-fit, producing minimal individual sprites at the cost of registration. Explicit `--width`/`--height` override sizing entirely and apply uniformly to every output.
+
+```bash
+# Render WebP, lossy, with minimal per-animation sprites.
+spine2img render-all fixtures/render-all/button.json out/button \
+  --atlas fixtures/render-all/button.atlas \
+  --format webp \
+  --no-lossless \
+  --quality 80 \
+  --tight
+```
+
+The shared options — `--fps`, `--background`, `--width`/`--height`, `--format`, `--no-lossless`, `--quality`, and `--overwrite` — all apply uniformly to every variation in the run.
+
+### Failure model and exit codes
+
+The failure model is split between problems that should stop the run and problems that should not.
+
+**Shared, upfront problems fail fast before any rendering happens:** a missing skeleton, atlas, or texture; an unknown requested skin; invalid options (such as a bad fps, dimension, or a `--quality`/`--no-lossless` request on a non-WebP run); a skeleton with zero animations; and — unless `--overwrite` is set — any pre-existing target file. The collision check is a single gate computed over the whole set of target paths, so you never render dozens of files and then halt partway on a conflict. `--overwrite` replaces each target; the command never deletes files it did not generate.
+
+**Isolated per-variation failures are collected, not fatal:** if one animation fails to render, encode, or write, the failure is recorded and the run continues so a single flaky variation does not cost you the whole batch. The library function still resolves normally — inspect the `failed` array to see what went wrong. The CLI prints each failure to stderr and sets a **non-zero exit code** when any variation failed, so CI detects a partial batch without parsing output.
+
+### `--json` and the result shape
+
+`renderSpineVariations` returns a structured summary. Each entry in `succeeded` is the same result shape a single `renderSpine` returns (so there is one metadata vocabulary across the tool); each entry in `failed` carries the typed error plus the skin, animation, and path it belongs to.
+
+```ts
+interface RenderSpineVariationsResult {
+	outputDir: string;
+	format: "apng" | "webp";
+	lossless: boolean;
+	quality?: number; // only when lossy WebP
+	skinNames: string[]; // skins actually rendered, in skeleton-declared order
+	durationMs: number; // whole-run wall time
+	succeeded: RenderSpineResult[];
+	failed: {
+		skinName?: string;
+		animationName: string;
+		outputPath: string;
+		error: Error;
+	}[];
+}
+```
+
+The CLI emits that same summary as JSON under `--json`, which suppresses the per-variation progress chatter so machine consumers get clean stdout:
+
+```bash
+spine2img render-all fixtures/render-all/button.json out/button \
+  --atlas fixtures/render-all/button.atlas \
+  --skin alt \
+  --json
+```
+
+```json
+{
+	"outputDir": "out/button",
+	"format": "apng",
+	"lossless": true,
+	"skinNames": ["alt"],
+	"durationMs": 412,
+	"succeeded": [
+		{
+			"animationName": "idle",
+			"skinName": "alt",
+			"outputPath": "out/button/alt/idle.apng",
+			"format": "apng",
+			"fps": 30,
+			"frameCount": 30,
+			"width": 65,
+			"height": 62,
+			"lossless": true
+		}
+	],
+	"failed": []
+}
+```
+
+In the JSON output each failure's `error` is serialized to `{ name, code, message }`, where `code` is the typed error code for known render errors.
+
 ## Development
 
 ```bash
