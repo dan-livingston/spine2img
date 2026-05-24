@@ -1,13 +1,14 @@
 import type { EncodingMetadata } from "#/lib/encoding-metadata.ts";
-import type { RenderSpineError } from "#/lib/errors.ts";
 import type { OutputFormat } from "#/lib/output-format.ts";
-import type { ResolvedVariation } from "#/lib/renderer-backend.ts";
+import type { Bounds, RendererBackend, ResolvedVariation } from "#/lib/renderer-backend.ts";
 import type { RenderSpineResult } from "#/render-spine.ts";
 
 import { normalizeBackgroundColor } from "#/lib/background-color.ts";
 import { canvasSpineRenderer } from "#/lib/canvas-spine-renderer.ts";
 import { deriveOutputPath } from "#/lib/derive-output-path.ts";
 import { enumerateVariations } from "#/lib/enumerate-variations.ts";
+import { OutputCollisionError, SpineInputResolutionError } from "#/lib/errors.ts";
+import { isMissingFileError } from "#/lib/node-errors.ts";
 import { measureRegisteredBounds } from "#/lib/registered-bounds.ts";
 import { renderVariation } from "#/lib/render-variation.ts";
 import { resolveAnimatedImageEncoder } from "#/lib/resolve-animated-image-encoder.ts";
@@ -15,7 +16,8 @@ import { resolveBatchFormat } from "#/lib/resolve-batch-format.ts";
 import { resolveEncodeOptions } from "#/lib/resolve-encode-options.ts";
 import { resolveSpineInputs } from "#/lib/resolve-spine-inputs.ts";
 import { validateExplicitDimension } from "#/lib/validate-dimension.ts";
-import { mkdir, writeFile } from "node:fs/promises";
+import { writeOutputFile } from "#/lib/write-output-file.ts";
+import { access, mkdir } from "node:fs/promises";
 import path from "node:path";
 
 const DEFAULT_FPS = 30;
@@ -40,6 +42,7 @@ export interface RenderSpineVariationsOptions {
 	// for the whole run to settle.
 	onProgress?: (result: RenderSpineResult) => void;
 	outputDir: string;
+	overwrite?: boolean;
 	quality?: number;
 	skeletonPath: string;
 	// Narrows the run to a subset of skins. Omitted or empty renders the automatic
@@ -61,15 +64,17 @@ export type RenderSpineVariationsResult = {
 	durationMs: number;
 	failed: {
 		animationName: string;
-		error: RenderSpineError;
+		error: Error;
 		outputPath: string;
-		skinName: string;
+		skinName?: string;
 	}[];
 	format: OutputFormat;
 	outputDir: string;
 	skinNames: string[];
 	succeeded: RenderSpineResult[];
 } & EncodingMetadata;
+
+type VariationFailure = RenderSpineVariationsResult["failed"][number];
 
 // One resolved variation plus the path it will be written to, grouped by skin so a
 // skin's registered canvas can be measured across all of its animations before any
@@ -81,10 +86,15 @@ interface PlannedVariation {
 }
 
 // Batch path: every animation across the resolved skin set (the animations × skins
-// cross-product, narrowable via `skinNames`), happy path. Assets load once and
-// variations render strictly sequentially (render → encode → write → release the
-// frames). An unknown requested skin fails fast from enumeration before any
-// rendering.
+// cross-product, narrowable via `skinNames`). Assets load once and variations render
+// strictly sequentially (render → encode → write → release the frames).
+//
+// The failure model is split. Shared/upfront problems abort the whole run before any
+// rendering: missing assets, an unknown requested skin, invalid options, a skeleton
+// with zero animations, an unsafe output name, and — unless `overwrite` is set — any
+// pre-existing target (a single fail-fast gate over the whole computed path set, not
+// a mid-run halt). Isolated per-variation render/encode/write failures are instead
+// collected into `failed`; the run continues and the caller decides the exit code.
 //
 // One format and encoding setting apply to the whole run: `format` (defaulting to
 // APNG, since a directory has no extension to infer from) selects the encoder seam,
@@ -96,10 +106,18 @@ interface PlannedVariation {
 // computes the union of the skin's animation bounds, then every animation renders
 // on that one canvas so the states line up pixel-for-pixel. `tight` opts back into
 // per-animation auto-fit; explicit `width`/`height` force the canvas uniformly.
-//
-// The collected failure model and `--json` land in later slices; `failed` is
-// therefore always empty here.
-export async function renderSpineVariations(
+export function renderSpineVariations(
+	options: RenderSpineVariationsOptions,
+): Promise<RenderSpineVariationsResult> {
+	return runSpineVariations(canvasSpineRenderer, options);
+}
+
+// The orchestrator with its renderer backend made explicit. `renderSpineVariations`
+// binds the real canvas backend; tests bind a faulting backend to exercise the
+// collected per-variation failure path deterministically. Not re-exported from the
+// package entry — it is an internal seam, not public API.
+export async function runSpineVariations<THandle>(
+	backend: RendererBackend<THandle>,
 	options: RenderSpineVariationsOptions,
 ): Promise<RenderSpineVariationsResult> {
 	const startedAt = Date.now();
@@ -113,6 +131,7 @@ export async function renderSpineVariations(
 	const width = validateExplicitDimension("width", options.width);
 	const height = validateExplicitDimension("height", options.height);
 	const tight = options.tight ?? false;
+	const overwrite = options.overwrite ?? false;
 	const format = resolveBatchFormat(options.format);
 	const encodeOptions = resolveEncodeOptions({
 		format,
@@ -126,13 +145,25 @@ export async function renderSpineVariations(
 	});
 	const outputDir = path.resolve(options.outputDir);
 
-	const assets = await canvasSpineRenderer.loadAssets({
+	const assets = await backend.loadAssets({
 		atlasPath: inputs.atlasPath,
 		skeletonPath: inputs.skeletonPath,
 	});
 
 	try {
-		const skeleton = canvasSpineRenderer.describeSkeleton(assets);
+		const skeleton = backend.describeSkeleton(assets);
+
+		// A structurally valid skeleton with nothing to render is a setup mistake, so
+		// fail fast before computing any paths.
+		if (skeleton.animationNames.length === 0) {
+			throw new SpineInputResolutionError({
+				assetPath: inputs.skeletonPath,
+				assetType: "skeleton",
+				code: "no-animations",
+				message: `Skeleton at ${inputs.skeletonPath} defines no animations.`,
+			});
+		}
+
 		// Fails fast on an unknown requested skin before any rendering happens.
 		const variations = enumerateVariations({
 			animationNames: skeleton.animationNames,
@@ -141,12 +172,14 @@ export async function renderSpineVariations(
 			skinNames: skeleton.skinNames,
 		});
 
-		// Resolve every variation (validating animation/skin names) and group it
-		// under its skin. enumerateVariations is skin-major, and a Map preserves
-		// first-seen key order, so the groups keep skeleton-declared skin order.
+		// Resolve every variation (validating animation/skin names) and derive its
+		// target path (rejecting any unsafe name), grouping by skin. enumerateVariations
+		// is skin-major, and a Map preserves first-seen key order, so the groups keep
+		// skeleton-declared skin order. Both happen up front so a bad name aborts the
+		// run before any file is written.
 		const skinGroups = new Map<string | undefined, PlannedVariation[]>();
 		for (const variation of variations) {
-			const resolved = canvasSpineRenderer.resolveVariation(assets, {
+			const resolved = backend.resolveVariation(assets, {
 				animationName: variation.animationName,
 				skinName: variation.skinName,
 			});
@@ -169,56 +202,86 @@ export async function renderSpineVariations(
 			}
 		}
 
+		// The single fail-fast collision gate: with the full target set known, refuse
+		// the whole run if any target already exists, rather than rendering some files
+		// and then halting partway.
+		if (!overwrite) {
+			const plannedPaths = [...skinGroups.values()]
+				.flat()
+				.map((planned) => planned.outputPath);
+			await assertNoExistingTargets(plannedPaths);
+		}
+
 		const succeeded: RenderSpineResult[] = [];
-		const renderedSkins = new Set<string>();
+		const failed: VariationFailure[] = [];
 
 		for (const group of skinGroups.values()) {
 			// The registered canvas: union the whole skin's bounds once, then render
 			// every animation onto it. `tight` skips this so each animation auto-fits.
-			const registeredBounds = tight
-				? undefined
-				: measureRegisteredBounds(
-						canvasSpineRenderer,
+			// A measure-pass failure is isolated to this skin's variations so the other
+			// skins still render.
+			let registeredBounds: Bounds | undefined;
+
+			if (!tight) {
+				try {
+					registeredBounds = measureRegisteredBounds(
+						backend,
 						assets,
 						group.map((planned) => planned.resolved),
 						fps,
 					);
+				} catch (error) {
+					for (const planned of group) {
+						failed.push(toFailure(planned, error));
+					}
+
+					continue;
+				}
+			}
 
 			for (const planned of group) {
-				const { encoded, result } = await renderVariation(canvasSpineRenderer, assets, {
-					atlasPath: inputs.atlasPath,
-					backgroundColor,
-					bounds: registeredBounds,
-					encodeOptions,
-					encoder,
-					format,
-					fps,
-					height,
-					outputPath: planned.outputPath,
-					resolved: planned.resolved,
-					skeletonPath: inputs.skeletonPath,
-					width,
-				});
+				try {
+					const { encoded, result } = await renderVariation(backend, assets, {
+						atlasPath: inputs.atlasPath,
+						backgroundColor,
+						bounds: registeredBounds,
+						encodeOptions,
+						encoder,
+						format,
+						fps,
+						height,
+						outputPath: planned.outputPath,
+						resolved: planned.resolved,
+						skeletonPath: inputs.skeletonPath,
+						width,
+					});
 
-				await mkdir(path.dirname(planned.outputPath), { recursive: true });
-				await writeFile(planned.outputPath, encoded);
+					await mkdir(path.dirname(planned.outputPath), { recursive: true });
+					// `wx` when not overwriting guards the narrow window between the
+					// upfront gate and the write; a race surfaces as this variation's
+					// own collected failure — a typed `OutputCollisionError`, matching
+					// single-render — rather than clobbering a file.
+					await writeOutputFile(planned.outputPath, encoded, overwrite);
 
-				succeeded.push(result);
-
-				if (planned.skinName !== undefined) {
-					renderedSkins.add(planned.skinName);
+					succeeded.push(result);
+					options.onProgress?.(result);
+				} catch (error) {
+					failed.push(toFailure(planned, error));
 				}
-
-				options.onProgress?.(result);
 			}
 		}
 
 		return {
 			durationMs: Date.now() - startedAt,
-			failed: [],
+			failed,
 			format,
 			outputDir,
-			skinNames: [...renderedSkins],
+			// The skins the run targeted, in skeleton-declared order — independent of
+			// which variations succeeded, so a fully-failed skin still reports here
+			// with its failures in `failed`.
+			skinNames: [...skinGroups.keys()].filter(
+				(skinName): skinName is string => skinName !== undefined,
+			),
 			succeeded,
 			// Spreads `lossless` and, for lossy WebP, `quality` — the same encoding
 			// vocabulary the single-render result carries, omitting `quality` when
@@ -226,6 +289,54 @@ export async function renderSpineVariations(
 			...encodeOptions,
 		};
 	} finally {
-		canvasSpineRenderer.disposeAssets(assets);
+		backend.disposeAssets(assets);
 	}
+}
+
+// Records a per-variation failure, coercing a non-Error throw into an Error so the
+// collected `error` is always inspectable.
+function toFailure(planned: PlannedVariation, error: unknown): VariationFailure {
+	return {
+		animationName: planned.resolved.animationName,
+		error: error instanceof Error ? error : new Error(String(error)),
+		outputPath: planned.outputPath,
+		skinName: planned.skinName,
+	};
+}
+
+// The upfront collision gate: throws a single `OutputCollisionError` listing every
+// target that already exists, so the user sees the whole conflict before any work.
+async function assertNoExistingTargets(plannedPaths: string[]): Promise<void> {
+	const existence = await Promise.all(
+		plannedPaths.map(async (target) => {
+			try {
+				await access(target);
+
+				return target;
+			} catch (error) {
+				if (isMissingFileError(error)) {
+					return undefined;
+				}
+
+				throw error;
+			}
+		}),
+	);
+	const collisions = existence.filter((target): target is string => target !== undefined);
+
+	if (collisions.length === 0) {
+		return;
+	}
+
+	throw new OutputCollisionError({
+		code: "existing-output",
+		message:
+			collisions.length === 1
+				? `Output already exists at ${collisions[0]}.`
+				: `${collisions.length} outputs already exist: ${collisions.join(", ")}.`,
+		// Non-empty by the early return above, so the first collision is the
+		// representative `outputPath`; `outputPaths` carries the full set.
+		outputPath: collisions[0],
+		outputPaths: collisions,
+	});
 }

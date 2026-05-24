@@ -4,14 +4,15 @@ import type { OutputFormat } from "#/lib/output-format.ts";
 import { normalizeBackgroundColor } from "#/lib/background-color.ts";
 import { canvasSpineRenderer } from "#/lib/canvas-spine-renderer.ts";
 import { OutputCollisionError } from "#/lib/errors.ts";
-import { isMissingFileError, isNodeErrorWithCode } from "#/lib/node-errors.ts";
+import { isMissingFileError } from "#/lib/node-errors.ts";
 import { renderVariation } from "#/lib/render-variation.ts";
 import { resolveAnimatedImageEncoder } from "#/lib/resolve-animated-image-encoder.ts";
 import { resolveEncodeOptions } from "#/lib/resolve-encode-options.ts";
 import { resolveFormat, type ResolvedOutputFormat } from "#/lib/resolve-format.ts";
 import { resolveSpineInputs } from "#/lib/resolve-spine-inputs.ts";
 import { validateExplicitDimension } from "#/lib/validate-dimension.ts";
-import { access, mkdir, writeFile } from "node:fs/promises";
+import { writeOutputFile } from "#/lib/write-output-file.ts";
+import { access, mkdir } from "node:fs/promises";
 import path from "node:path";
 
 const DEFAULT_FPS = 30;
@@ -157,25 +158,4 @@ async function assertOutputWritable(outputPath: string, overwrite: boolean): Pro
 		message: `Output already exists at ${outputPath}.`,
 		outputPath,
 	});
-}
-
-async function writeOutputFile(
-	outputPath: string,
-	encoded: Uint8Array,
-	overwrite: boolean,
-): Promise<void> {
-	try {
-		await writeFile(outputPath, encoded, { flag: overwrite ? "w" : "wx" });
-	} catch (error) {
-		if (isNodeErrorWithCode(error, "EEXIST")) {
-			throw new OutputCollisionError({
-				cause: error,
-				code: "existing-output",
-				message: `Output already exists at ${outputPath}.`,
-				outputPath,
-			});
-		}
-
-		throw error;
-	}
 }

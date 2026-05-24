@@ -185,6 +185,34 @@ export async function createSelectableFixture(tempDirectory: string): Promise<st
 	return fixtureCopyDirectory;
 }
 
+interface RenderAllSkeleton {
+	animations: Record<string, unknown>;
+	skins: Array<{
+		attachments: Record<string, unknown>;
+		name: string;
+	}>;
+}
+
+// A single-keyframe animation for injecting an extra entry into a render-all fixture
+// when a test only cares about the animation's name (nested-path and traversal cases),
+// not what it renders.
+export const MINIMAL_ANIMATION = { bones: { bone: { translate: [{ time: 0, x: 0, y: 0 }] } } };
+
+export async function createRenderAllFixture(
+	tempDirectory: string,
+	mutate: (skeleton: RenderAllSkeleton) => void,
+): Promise<string> {
+	const fixtureCopyDirectory = path.join(tempDirectory, "render-all-fixture");
+	const skeletonPath = path.join(fixtureCopyDirectory, "button.json");
+	await cp(renderAllFixtureDirectory, fixtureCopyDirectory, { recursive: true });
+
+	const skeleton = JSON.parse(await readFile(skeletonPath, "utf8")) as RenderAllSkeleton;
+	mutate(skeleton);
+	await writeFile(skeletonPath, `${JSON.stringify(skeleton, null, "\t")}\n`);
+
+	return skeletonPath;
+}
+
 export async function createNoisyFixture(tempDirectory: string): Promise<string> {
 	const fixtureCopyDirectory = path.join(tempDirectory, "noisy-fixture");
 	const texturePath = path.join(fixtureCopyDirectory, "box.png");

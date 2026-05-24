@@ -20,10 +20,12 @@ test("packed package exposes the stable public contract", async () => {
 
 	expect(Object.keys(packageApi).sort()).toEqual([
 		"OutputCollisionError",
+		"OutputPathError",
 		"RenderOptionValidationError",
 		"SpineInputResolutionError",
 		"SpineSelectionError",
 		"isOutputCollisionError",
+		"isOutputPathError",
 		"isRenderOptionValidationError",
 		"isRenderSpineError",
 		"isSpineInputResolutionError",

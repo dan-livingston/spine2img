@@ -1,5 +1,3 @@
-import type { RenderSpineResult } from "#/render-spine.ts";
-
 import { renderSpineVariations } from "#/render-spine-variations.ts";
 import { renderSpine } from "#/render-spine.ts";
 import { Command, InvalidArgumentError } from "commander";
@@ -120,6 +118,7 @@ export function createCli(): Command {
 				.option("--fps <fps>", "frames per second", Number)
 				.option("--no-lossless", "opt into lossy WebP output")
 				.option("--quality <quality>", "lossy WebP quality from 0 to 100", Number)
+				.option("--overwrite", "replace existing output files")
 				.action(async (skeleton, outDir, options) => {
 					const result = await renderSpineVariations({
 						skeletonPath: skeleton,
@@ -130,6 +129,7 @@ export function createCli(): Command {
 						fps: options.fps,
 						height: options.height,
 						lossless: options.lossless,
+						overwrite: options.overwrite,
 						quality: options.quality,
 						skinNames: options.skin,
 						tight: options.tight,
@@ -140,19 +140,38 @@ export function createCli(): Command {
 							);
 						},
 					});
-					const count = result.succeeded.length;
+					const succeeded = result.succeeded.length;
+					const failed = result.failed.length;
+
+					// One stderr line per collected failure, so a long batch's casualties
+					// are visible alongside the streamed successes.
+					for (const failure of result.failed) {
+						console.error(
+							`Failed ${formatVariationLabel(failure)}: ${failure.error.message}`,
+						);
+					}
 
 					console.log(
-						`Rendered ${count} variation${count === 1 ? "" : "s"} to ${result.outputDir}.`,
+						`Rendered ${succeeded} variation${succeeded === 1 ? "" : "s"} to ${result.outputDir}${
+							failed > 0 ? ` (${failed} failed)` : ""
+						}.`,
 					);
+
+					// Any collected per-variation failure makes the run exit non-zero, so
+					// CI detects a partial batch without parsing output.
+					if (failed > 0) {
+						process.exitCode = 1;
+					}
 				}),
 		);
 
 	return program;
 }
 
-function formatVariationLabel(result: RenderSpineResult): string {
-	return result.skinName ? `${result.skinName}/${result.animationName}` : result.animationName;
+function formatVariationLabel(variation: { animationName: string; skinName?: string }): string {
+	return variation.skinName
+		? `${variation.skinName}/${variation.animationName}`
+		: variation.animationName;
 }
 
 export async function runCli(argv = process.argv): Promise<void> {

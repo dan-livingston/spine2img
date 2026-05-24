@@ -4,6 +4,7 @@ export type SpineInputResolutionErrorCode =
 	| "inconsistent-assets"
 	| "invalid-asset"
 	| "missing-asset"
+	| "no-animations"
 	| "unreadable-asset";
 
 export type SpineSelectionType = "animation" | "skin";
@@ -11,6 +12,7 @@ export type SpineSelectionType = "animation" | "skin";
 export type SpineSelectionErrorCode = "missing-selection";
 
 export type OutputCollisionErrorCode = "existing-output";
+export type OutputPathErrorCode = "unsafe-output-path";
 export type RenderOptionValidationErrorCode =
 	| "invalid-quality"
 	| "unsupported-lossy-output"
@@ -20,6 +22,7 @@ export type RenderOptionValidationErrorCode =
 // listed here must have a matching `instanceof` check there, and vice versa.
 export type RenderSpineError =
 	| OutputCollisionError
+	| OutputPathError
 	| RenderOptionValidationError
 	| SpineInputResolutionError
 	| SpineSelectionError;
@@ -48,6 +51,15 @@ export interface OutputCollisionErrorOptions {
 	code: OutputCollisionErrorCode;
 	message: string;
 	outputPath: string;
+	outputPaths?: string[];
+}
+
+export interface OutputPathErrorOptions {
+	cause?: unknown;
+	code: OutputPathErrorCode;
+	message: string;
+	outputDir: string;
+	unsafeName: string;
 }
 
 export interface RenderOptionValidationErrorOptions {
@@ -96,12 +108,29 @@ export class OutputCollisionError extends Error {
 	declare readonly cause: unknown;
 	readonly code: OutputCollisionErrorCode;
 	readonly outputPath: string;
+	readonly outputPaths?: string[];
 
 	constructor(options: OutputCollisionErrorOptions) {
 		super(options.message, { cause: options.cause });
 		this.name = "OutputCollisionError";
 		this.code = options.code;
 		this.outputPath = options.outputPath;
+		this.outputPaths = options.outputPaths;
+	}
+}
+
+export class OutputPathError extends Error {
+	declare readonly cause: unknown;
+	readonly code: OutputPathErrorCode;
+	readonly outputDir: string;
+	readonly unsafeName: string;
+
+	constructor(options: OutputPathErrorOptions) {
+		super(options.message, { cause: options.cause });
+		this.name = "OutputPathError";
+		this.code = options.code;
+		this.outputDir = options.outputDir;
+		this.unsafeName = options.unsafeName;
 	}
 }
 
@@ -118,7 +147,21 @@ export class RenderOptionValidationError extends Error {
 
 export function formatRenderErrorForCli(error: unknown): string {
 	if (error instanceof OutputCollisionError) {
-		return `Output already exists: ${error.outputPath}. Pass --overwrite to replace it.`;
+		const collisions = error.outputPaths ?? [error.outputPath];
+
+		if (collisions.length > 1) {
+			return [
+				"Outputs already exist:",
+				...collisions.map((collision) => `  ${collision}`),
+				"Pass --overwrite to replace them.",
+			].join("\n");
+		}
+
+		return `Output already exists: ${collisions[0] ?? error.outputPath}. Pass --overwrite to replace it.`;
+	}
+
+	if (error instanceof OutputPathError) {
+		return `Unsafe output name "${error.unsafeName}": a name cannot contain ".." or absolute path segments.`;
 	}
 
 	if (error instanceof RenderOptionValidationError) {
@@ -133,6 +176,8 @@ export function formatRenderErrorForCli(error: unknown): string {
 				return `Could not read ${error.assetType} input: ${error.assetPath}.`;
 			case "invalid-asset":
 				return `Invalid ${error.assetType} input: ${error.assetPath}.`;
+			case "no-animations":
+				return `Skeleton defines no animations: ${error.assetPath}.`;
 			case "inconsistent-assets":
 				return `Skeleton and atlas do not match: ${error.assetPath} <> ${error.relatedPath ?? "unknown atlas"}.`;
 		}
@@ -166,6 +211,10 @@ export function isOutputCollisionError(error: unknown): error is OutputCollision
 	return error instanceof OutputCollisionError;
 }
 
+export function isOutputPathError(error: unknown): error is OutputPathError {
+	return error instanceof OutputPathError;
+}
+
 export function isRenderOptionValidationError(
 	error: unknown,
 ): error is RenderOptionValidationError {
@@ -176,6 +225,7 @@ export function isRenderOptionValidationError(
 export function isRenderSpineError(error: unknown): error is RenderSpineError {
 	return (
 		isOutputCollisionError(error) ||
+		isOutputPathError(error) ||
 		isRenderOptionValidationError(error) ||
 		isSpineInputResolutionError(error) ||
 		isSpineSelectionError(error)

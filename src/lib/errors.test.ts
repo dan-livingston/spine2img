@@ -1,9 +1,12 @@
 import {
 	OutputCollisionError,
+	OutputPathError,
 	RenderOptionValidationError,
 	SpineInputResolutionError,
 	SpineSelectionError,
+	formatRenderErrorForCli,
 	isOutputCollisionError,
+	isOutputPathError,
 	isRenderOptionValidationError,
 	isRenderSpineError,
 	isSpineInputResolutionError,
@@ -15,6 +18,13 @@ const outputCollisionError = new OutputCollisionError({
 	code: "existing-output",
 	message: "Output already exists.",
 	outputPath: "out.apng",
+});
+
+const outputPathError = new OutputPathError({
+	code: "unsafe-output-path",
+	message: "Unsafe output name.",
+	outputDir: "/out",
+	unsafeName: "../escape",
 });
 
 const inputResolutionError = new SpineInputResolutionError({
@@ -40,6 +50,7 @@ const optionValidationError = new RenderOptionValidationError({
 
 test("isRenderSpineError accepts every member of the union", () => {
 	expect(isRenderSpineError(outputCollisionError)).toBe(true);
+	expect(isRenderSpineError(outputPathError)).toBe(true);
 	expect(isRenderSpineError(optionValidationError)).toBe(true);
 	expect(isRenderSpineError(inputResolutionError)).toBe(true);
 	expect(isRenderSpineError(selectionError)).toBe(true);
@@ -62,4 +73,48 @@ test("each typed guard matches only its own error", () => {
 
 	expect(isSpineSelectionError(selectionError)).toBe(true);
 	expect(isSpineSelectionError(outputCollisionError)).toBe(false);
+
+	expect(isOutputPathError(outputPathError)).toBe(true);
+	expect(isOutputPathError(outputCollisionError)).toBe(false);
+});
+
+test("formatRenderErrorForCli lists every collision when a batch gate finds more than one", () => {
+	const message = formatRenderErrorForCli(
+		new OutputCollisionError({
+			code: "existing-output",
+			message: "2 outputs already exist.",
+			outputPath: "/out/alt/idle.apng",
+			outputPaths: ["/out/alt/idle.apng", "/out/alt/hover.apng"],
+		}),
+	);
+
+	expect(message).toContain("Outputs already exist:");
+	expect(message).toContain("/out/alt/idle.apng");
+	expect(message).toContain("/out/alt/hover.apng");
+	expect(message).toContain("Pass --overwrite to replace them.");
+});
+
+test("formatRenderErrorForCli keeps the singular phrasing for a lone collision", () => {
+	expect(formatRenderErrorForCli(outputCollisionError)).toBe(
+		"Output already exists: out.apng. Pass --overwrite to replace it.",
+	);
+});
+
+test("formatRenderErrorForCli names the offending segment for an unsafe output path", () => {
+	expect(formatRenderErrorForCli(outputPathError)).toBe(
+		'Unsafe output name "../escape": a name cannot contain ".." or absolute path segments.',
+	);
+});
+
+test("formatRenderErrorForCli explains a skeleton that defines no animations", () => {
+	expect(
+		formatRenderErrorForCli(
+			new SpineInputResolutionError({
+				assetPath: "button.json",
+				assetType: "skeleton",
+				code: "no-animations",
+				message: "Skeleton defines no animations.",
+			}),
+		),
+	).toBe("Skeleton defines no animations: button.json.");
 });
