@@ -89,6 +89,11 @@ export function createCli(): Command {
 					"path to the Spine atlas (defaults beside the skeleton; relative paths resolve from the current directory)",
 				)
 				.option(
+					"--format <format>",
+					"output format for every file (apng or webp); defaults to apng",
+					parseOutputFormat,
+				)
+				.option(
 					"--skin <skin>",
 					"render only this skin (repeatable); defaults to every named skin",
 					collectSkin,
@@ -113,14 +118,19 @@ export function createCli(): Command {
 					"solid background hex color (#rgb, #rgba, #rrggbb, or #rrggbbaa)",
 				)
 				.option("--fps <fps>", "frames per second", Number)
+				.option("--no-lossless", "opt into lossy WebP output")
+				.option("--quality <quality>", "lossy WebP quality from 0 to 100", Number)
 				.action(async (skeleton, outDir, options) => {
 					const result = await renderSpineVariations({
 						skeletonPath: skeleton,
 						outputDir: outDir,
 						atlasPath: options.atlas,
 						backgroundColor: options.background,
+						format: options.format,
 						fps: options.fps,
 						height: options.height,
+						lossless: options.lossless,
+						quality: options.quality,
 						skinNames: options.skin,
 						tight: options.tight,
 						width: options.width,

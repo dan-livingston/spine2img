@@ -3,7 +3,12 @@ import os from "node:os";
 import path from "node:path";
 import { expect, test } from "vite-plus/test";
 
-import { decodeApng, importPackageApi, renderAllFixtureSkeletonPath } from "../helpers.ts";
+import {
+	decodeApng,
+	decodeWebpFrames,
+	importPackageApi,
+	renderAllFixtureSkeletonPath,
+} from "../helpers.ts";
 
 test("packed package API renders the animations × named-skins cross-product", async () => {
 	const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-api-render-all-"));
@@ -209,6 +214,117 @@ test("packed package API forces a uniform canvas with explicit width and height"
 		const decoded = decodeApng(await readFile(sample?.outputPath ?? ""));
 		expect(decoded.width).toBe(120);
 		expect(decoded.height).toBe(90);
+	} finally {
+		await rm(tempDirectory, { force: true, recursive: true });
+	}
+});
+
+test("packed package API renders a WebP batch with .webp files tagged WebP", async () => {
+	const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-api-render-all-webp-"));
+
+	try {
+		const outputDir = path.join(tempDirectory, "out");
+		const packageApi = await importPackageApi();
+		const result = await packageApi.renderSpineVariations({
+			format: "webp",
+			outputDir,
+			skeletonPath: renderAllFixtureSkeletonPath,
+		});
+
+		// One format/encoding setting for the whole run; lossless WebP carries no
+		// quality, exactly like a single lossless render.
+		expect(result.format).toBe("webp");
+		expect(result.lossless).toBe(true);
+		expect(result).not.toHaveProperty("quality");
+		expect(result.succeeded).toHaveLength(6);
+		expect(result.succeeded.every((entry) => entry.format === "webp")).toBe(true);
+
+		// Generated extensions follow the chosen format.
+		expect(result.succeeded.every((entry) => entry.outputPath.endsWith(".webp"))).toBe(true);
+		const altIdle = result.succeeded.find(
+			(entry) => entry.skinName === "alt" && entry.animationName === "idle",
+		);
+		expect(altIdle?.outputPath).toBe(path.join(outputDir, "alt", "idle.webp"));
+
+		const decoded = await decodeWebpFrames(await readFile(altIdle?.outputPath ?? ""));
+		expect(decoded.format).toBe("webp");
+		expect(decoded.frames.length).toBe(altIdle?.frameCount);
+	} finally {
+		await rm(tempDirectory, { force: true, recursive: true });
+	}
+});
+
+test("packed package API applies lossy WebP encoding to every variation", async () => {
+	const tempDirectory = await mkdtemp(
+		path.join(os.tmpdir(), "spine2img-api-render-all-lossy-webp-"),
+	);
+
+	try {
+		const outputDir = path.join(tempDirectory, "out");
+		const packageApi = await importPackageApi();
+		const result = await packageApi.renderSpineVariations({
+			format: "webp",
+			lossless: false,
+			outputDir,
+			quality: 40,
+			skeletonPath: renderAllFixtureSkeletonPath,
+			skinNames: ["alt"],
+		});
+
+		// The single encoding setting reaches both the run summary and every entry.
+		expect(result).toMatchObject({ format: "webp", lossless: false, quality: 40 });
+		expect(result.succeeded).toHaveLength(3);
+		expect(
+			result.succeeded.every(
+				(entry) =>
+					entry.format === "webp" && entry.lossless === false && entry.quality === 40,
+			),
+		).toBe(true);
+
+		const decoded = await decodeWebpFrames(
+			await readFile(result.succeeded[0]?.outputPath ?? ""),
+		);
+		expect(decoded.format).toBe("webp");
+	} finally {
+		await rm(tempDirectory, { force: true, recursive: true });
+	}
+});
+
+test("packed package API rejects lossy encoding on an APNG batch", async () => {
+	const tempDirectory = await mkdtemp(
+		path.join(os.tmpdir(), "spine2img-api-render-all-lossy-apng-"),
+	);
+
+	try {
+		const outputDir = path.join(tempDirectory, "out");
+		const packageApi = await importPackageApi();
+
+		let error: unknown;
+
+		try {
+			await packageApi.renderSpineVariations({
+				lossless: false,
+				outputDir,
+				skeletonPath: renderAllFixtureSkeletonPath,
+			});
+		} catch (caught) {
+			error = caught;
+		}
+
+		expect(error).toBeInstanceOf(packageApi.RenderOptionValidationError);
+		expect(error).toMatchObject({
+			code: "unsupported-lossy-output",
+			message: "lossless: false is only supported for WebP output.",
+		});
+
+		// The invalid combination is rejected before any work, so nothing is written.
+		let listing: string[] | undefined;
+		try {
+			listing = await readdir(outputDir);
+		} catch {
+			listing = undefined;
+		}
+		expect(listing).toBeUndefined();
 	} finally {
 		await rm(tempDirectory, { force: true, recursive: true });
 	}

@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { expect, test } from "vite-plus/test";
 
-import { decodeApng, renderAllFixtureSkeletonPath, runCli } from "../helpers.ts";
+import { decodeApng, decodeWebpFrames, renderAllFixtureSkeletonPath, runCli } from "../helpers.ts";
 
 test("packed package CLI render-all renders the cross-product across named skins", async () => {
 	const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-cli-render-all-"));
@@ -103,6 +103,63 @@ test("packed package CLI render-all --width/--height force a uniform canvas", as
 				expect(decoded.height).toBe(80);
 			}
 		}
+	} finally {
+		await rm(tempDirectory, { force: true, recursive: true });
+	}
+});
+
+test("packed package CLI render-all --format webp writes WebP files", async () => {
+	const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-cli-render-all-webp-"));
+
+	try {
+		const outputDir = path.join(tempDirectory, "out");
+		const { stdout } = await runCli([
+			"render-all",
+			renderAllFixtureSkeletonPath,
+			outputDir,
+			"--format",
+			"webp",
+			"--skin",
+			"alt",
+		]);
+
+		// Generated extensions follow the chosen format.
+		expect((await readdir(path.join(outputDir, "alt"))).sort()).toEqual([
+			"hover.webp",
+			"idle.webp",
+			"press.webp",
+		]);
+
+		const idle = await decodeWebpFrames(
+			await readFile(path.join(outputDir, "alt", "idle.webp")),
+		);
+		expect(idle.format).toBe("webp");
+		expect(idle.frames).toHaveLength(30);
+		expect(stdout).toContain("Rendered 3 variations");
+	} finally {
+		await rm(tempDirectory, { force: true, recursive: true });
+	}
+});
+
+test("packed package CLI render-all rejects lossy encoding on the APNG default", async () => {
+	const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-cli-render-all-lossy-"));
+
+	try {
+		const outputDir = path.join(tempDirectory, "out");
+
+		let error: unknown;
+
+		try {
+			await runCli(["render-all", renderAllFixtureSkeletonPath, outputDir, "--no-lossless"]);
+		} catch (caught) {
+			error = caught;
+		}
+
+		expect(error).toBeInstanceOf(Error);
+		expect((error as { code?: number }).code).not.toBe(0);
+		expect((error as { stderr?: string }).stderr).toContain(
+			"lossless: false is only supported for WebP output.",
+		);
 	} finally {
 		await rm(tempDirectory, { force: true, recursive: true });
 	}

@@ -1,3 +1,4 @@
+import type { EncodingMetadata } from "#/lib/encoding-metadata.ts";
 import type { RenderSpineError } from "#/lib/errors.ts";
 import type { OutputFormat } from "#/lib/output-format.ts";
 import type { ResolvedVariation } from "#/lib/renderer-backend.ts";
@@ -10,6 +11,7 @@ import { enumerateVariations } from "#/lib/enumerate-variations.ts";
 import { measureRegisteredBounds } from "#/lib/registered-bounds.ts";
 import { renderVariation } from "#/lib/render-variation.ts";
 import { resolveAnimatedImageEncoder } from "#/lib/resolve-animated-image-encoder.ts";
+import { resolveBatchFormat } from "#/lib/resolve-batch-format.ts";
 import { resolveEncodeOptions } from "#/lib/resolve-encode-options.ts";
 import { resolveSpineInputs } from "#/lib/resolve-spine-inputs.ts";
 import { validateExplicitDimension } from "#/lib/validate-dimension.ts";
@@ -21,15 +23,24 @@ const DEFAULT_FPS = 30;
 export interface RenderSpineVariationsOptions {
 	atlasPath?: string;
 	backgroundColor?: string;
+	// One output format for the whole run. Because the target is a directory with no
+	// extension to infer from, this is the only format input — omitted defaults to
+	// APNG.
+	format?: OutputFormat;
 	fps?: number;
 	// Forces the canvas height uniformly across every output. Overrides both the
 	// registered canvas and `--tight` auto-fit.
 	height?: number;
+	// Lossy WebP opt-out/quality, applied uniformly to every variation. `lossless:
+	// false` or a `quality` on a non-WebP run is rejected with the same typed
+	// validation error as single-render.
+	lossless?: boolean;
 	// Invoked after each variation is written, in skeleton-declared order, so a
 	// caller (the CLI) can stream progress as a long batch runs instead of waiting
 	// for the whole run to settle.
 	onProgress?: (result: RenderSpineResult) => void;
 	outputDir: string;
+	quality?: number;
 	skeletonPath: string;
 	// Narrows the run to a subset of skins. Omitted or empty renders the automatic
 	// "all skins" set (named skins, excluding `default` when named skins exist).
@@ -42,7 +53,11 @@ export interface RenderSpineVariationsOptions {
 	width?: number;
 }
 
-export interface RenderSpineVariationsResult {
+// Intersected with `EncodingMetadata` rather than declaring loose `lossless` /
+// `quality` fields, so `quality` is present iff `lossless === false` — the same
+// discriminated encoding shape single-render's result carries, surfaced unchanged
+// from the `encodeOptions` spread below.
+export type RenderSpineVariationsResult = {
 	durationMs: number;
 	failed: {
 		animationName: string;
@@ -51,12 +66,10 @@ export interface RenderSpineVariationsResult {
 		skinName: string;
 	}[];
 	format: OutputFormat;
-	lossless: boolean;
 	outputDir: string;
-	quality?: number;
 	skinNames: string[];
 	succeeded: RenderSpineResult[];
-}
+} & EncodingMetadata;
 
 // One resolved variation plus the path it will be written to, grouped by skin so a
 // skin's registered canvas can be measured across all of its animations before any
@@ -68,18 +81,24 @@ interface PlannedVariation {
 }
 
 // Batch path: every animation across the resolved skin set (the animations × skins
-// cross-product, narrowable via `skinNames`), APNG only, happy path. Assets load
-// once and variations render strictly sequentially (render → encode → write →
-// release the frames). An unknown requested skin fails fast from enumeration
-// before any rendering.
+// cross-product, narrowable via `skinNames`), happy path. Assets load once and
+// variations render strictly sequentially (render → encode → write → release the
+// frames). An unknown requested skin fails fast from enumeration before any
+// rendering.
+//
+// One format and encoding setting apply to the whole run: `format` (defaulting to
+// APNG, since a directory has no extension to infer from) selects the encoder seam,
+// and `lossless`/`quality` flow through the same validation as single-render, so a
+// lossy/quality request on a non-WebP run is rejected up front. Generated file
+// extensions follow the format (`.webp`/`.apng`).
 //
 // Sizing defaults to a registered canvas per skin: a cheap pose-only measure pass
 // computes the union of the skin's animation bounds, then every animation renders
 // on that one canvas so the states line up pixel-for-pixel. `tight` opts back into
 // per-animation auto-fit; explicit `width`/`height` force the canvas uniformly.
 //
-// WebP/format selection, the collected failure model, and `--json` land in later
-// slices; `failed` is therefore always empty here.
+// The collected failure model and `--json` land in later slices; `failed` is
+// therefore always empty here.
 export async function renderSpineVariations(
 	options: RenderSpineVariationsOptions,
 ): Promise<RenderSpineVariationsResult> {
@@ -94,8 +113,12 @@ export async function renderSpineVariations(
 	const width = validateExplicitDimension("width", options.width);
 	const height = validateExplicitDimension("height", options.height);
 	const tight = options.tight ?? false;
-	const format: OutputFormat = "apng";
-	const encodeOptions = resolveEncodeOptions({ format });
+	const format = resolveBatchFormat(options.format);
+	const encodeOptions = resolveEncodeOptions({
+		format,
+		lossless: options.lossless,
+		quality: options.quality,
+	});
 	const encoder = resolveAnimatedImageEncoder(format);
 	const inputs = resolveSpineInputs({
 		atlasPath: options.atlasPath,
@@ -194,10 +217,13 @@ export async function renderSpineVariations(
 			durationMs: Date.now() - startedAt,
 			failed: [],
 			format,
-			lossless: encodeOptions.lossless,
 			outputDir,
 			skinNames: [...renderedSkins],
 			succeeded,
+			// Spreads `lossless` and, for lossy WebP, `quality` — the same encoding
+			// vocabulary the single-render result carries, omitting `quality` when
+			// lossless.
+			...encodeOptions,
 		};
 	} finally {
 		canvasSpineRenderer.disposeAssets(assets);
