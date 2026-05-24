@@ -11,6 +11,7 @@ import {
 	isRenderSpineError,
 	isSpineInputResolutionError,
 	isSpineSelectionError,
+	serializeRenderErrorForJson,
 } from "#/lib/errors.ts";
 import { expect, test } from "vite-plus/test";
 
@@ -117,4 +118,37 @@ test("formatRenderErrorForCli explains a skeleton that defines no animations", (
 			}),
 		),
 	).toBe("Skeleton defines no animations: button.json.");
+});
+
+test("serializeRenderErrorForJson keeps the name, code, and message of a typed error", () => {
+	expect(serializeRenderErrorForJson(selectionError)).toEqual({
+		code: "missing-selection",
+		message: "Unknown animation.",
+		name: "SpineSelectionError",
+	});
+});
+
+test("serializeRenderErrorForJson omits code for a plain Error", () => {
+	const serialized = serializeRenderErrorForJson(new Error("render failed for boom"));
+
+	expect(serialized).toEqual({ message: "render failed for boom", name: "Error" });
+	expect(serialized).not.toHaveProperty("code");
+});
+
+test("serializeRenderErrorForJson survives JSON round-tripping where a raw Error would not", () => {
+	const error = new Error("boom");
+
+	// A raw Error stringifies to an empty object; the projection keeps the cause.
+	expect(JSON.stringify(error)).toBe("{}");
+	expect(JSON.parse(JSON.stringify(serializeRenderErrorForJson(error)))).toEqual({
+		message: "boom",
+		name: "Error",
+	});
+});
+
+test("serializeRenderErrorForJson coerces a non-Error throw", () => {
+	expect(serializeRenderErrorForJson("not an error")).toEqual({
+		message: "not an error",
+		name: "Error",
+	});
 });

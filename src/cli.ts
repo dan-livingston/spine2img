@@ -1,3 +1,6 @@
+import type { RenderSpineVariationsResult } from "#/render-spine-variations.ts";
+
+import { serializeRenderErrorForJson } from "#/lib/errors.ts";
 import { renderSpineVariations } from "#/render-spine-variations.ts";
 import { renderSpine } from "#/render-spine.ts";
 import { Command, InvalidArgumentError } from "commander";
@@ -118,8 +121,13 @@ export function createCli(): Command {
 				.option("--fps <fps>", "frames per second", Number)
 				.option("--no-lossless", "opt into lossy WebP output")
 				.option("--quality <quality>", "lossy WebP quality from 0 to 100", Number)
+				.option(
+					"--json",
+					"print the structured run summary as JSON instead of streaming progress",
+				)
 				.option("--overwrite", "replace existing output files")
 				.action(async (skeleton, outDir, options) => {
+					const json = Boolean(options.json);
 					const result = await renderSpineVariations({
 						skeletonPath: skeleton,
 						outputDir: outDir,
@@ -135,27 +143,34 @@ export function createCli(): Command {
 						tight: options.tight,
 						width: options.width,
 						onProgress: (variation) => {
+							if (json) {
+								return;
+							}
+
 							console.log(
 								`Rendered ${formatVariationLabel(variation)} to ${variation.outputPath} (${variation.width}x${variation.height}, ${variation.frameCount} frames @ ${variation.fps} fps).`,
 							);
 						},
 					});
-					const succeeded = result.succeeded.length;
 					const failed = result.failed.length;
 
-					// One stderr line per collected failure, so a long batch's casualties
-					// are visible alongside the streamed successes.
-					for (const failure of result.failed) {
-						console.error(
-							`Failed ${formatVariationLabel(failure)}: ${failure.error.message}`,
+					if (json) {
+						console.log(JSON.stringify(serializeVariationsResult(result)));
+					} else {
+						const succeeded = result.succeeded.length;
+
+						for (const failure of result.failed) {
+							console.error(
+								`Failed ${formatVariationLabel(failure)}: ${failure.error.message}`,
+							);
+						}
+
+						console.log(
+							`Rendered ${succeeded} variation${succeeded === 1 ? "" : "s"} to ${result.outputDir}${
+								failed > 0 ? ` (${failed} failed)` : ""
+							}.`,
 						);
 					}
-
-					console.log(
-						`Rendered ${succeeded} variation${succeeded === 1 ? "" : "s"} to ${result.outputDir}${
-							failed > 0 ? ` (${failed} failed)` : ""
-						}.`,
-					);
 
 					// Any collected per-variation failure makes the run exit non-zero, so
 					// CI detects a partial batch without parsing output.
@@ -166,6 +181,18 @@ export function createCli(): Command {
 		);
 
 	return program;
+}
+
+function serializeVariationsResult(result: RenderSpineVariationsResult) {
+	return {
+		...result,
+		failed: result.failed.map((failure) => ({
+			animationName: failure.animationName,
+			error: serializeRenderErrorForJson(failure.error),
+			outputPath: failure.outputPath,
+			skinName: failure.skinName,
+		})),
+	};
 }
 
 function formatVariationLabel(variation: { animationName: string; skinName?: string }): string {

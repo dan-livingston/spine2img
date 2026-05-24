@@ -199,6 +199,24 @@ export function formatRenderErrorForCli(error: unknown): string {
 	return String(error);
 }
 
+export interface SerializedRenderError {
+	code?: string;
+	message: string;
+	name: string;
+}
+
+export function serializeRenderErrorForJson(error: unknown): SerializedRenderError {
+	if (error instanceof Error) {
+		return {
+			...(isRenderSpineError(error) ? { code: error.code } : {}),
+			message: error.message,
+			name: error.name,
+		};
+	}
+
+	return { message: String(error), name: "Error" };
+}
+
 export function isSpineInputResolutionError(error: unknown): error is SpineInputResolutionError {
 	return error instanceof SpineInputResolutionError;
 }
