@@ -46,6 +46,19 @@
 					}
 				}
 			}
+		},
+		{
+			"name": "wide",
+			"attachments": {
+				"box": {
+					"box": {
+						"type": "region",
+						"path": "box",
+						"width": 96,
+						"height": 32
+					}
+				}
+			}
 		}
 	],
 	"animations": {

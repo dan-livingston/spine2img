@@ -25,6 +25,9 @@ export interface RenderSpineVariationsOptions {
 	onProgress?: (result: RenderSpineResult) => void;
 	outputDir: string;
 	skeletonPath: string;
+	// Narrows the run to a subset of skins. Omitted or empty renders the automatic
+	// "all skins" set (named skins, excluding `default` when named skins exist).
+	skinNames?: string[];
 }
 
 export interface RenderSpineVariationsResult {
@@ -43,11 +46,13 @@ export interface RenderSpineVariationsResult {
 	succeeded: RenderSpineResult[];
 }
 
-// Tracer-bullet batch path: every animation of the sole/default skin, APNG only,
-// happy path. Assets load once and variations render strictly sequentially
-// (render → encode → write → release the frames). The cross-product, registered
-// canvas, WebP/format selection, the collected failure model, and `--json` land
-// in later slices; `failed` is therefore always empty here.
+// Batch path: every animation across the resolved skin set (the animations × skins
+// cross-product, narrowable via `skinNames`), APNG only, happy path. Assets load
+// once and variations render strictly sequentially (render → encode → write →
+// release the frames). An unknown requested skin fails fast from enumeration
+// before any rendering. The registered canvas, WebP/format selection, the
+// collected failure model, and `--json` land in later slices; `failed` is
+// therefore always empty here.
 export async function renderSpineVariations(
 	options: RenderSpineVariationsOptions,
 ): Promise<RenderSpineVariationsResult> {
@@ -75,8 +80,11 @@ export async function renderSpineVariations(
 
 	try {
 		const skeleton = canvasSpineRenderer.describeSkeleton(assets);
+		// Fails fast on an unknown requested skin before any rendering happens.
 		const variations = enumerateVariations({
 			animationNames: skeleton.animationNames,
+			requestedSkinNames: options.skinNames,
+			skeletonPath: inputs.skeletonPath,
 			skinNames: skeleton.skinNames,
 		});
 		const succeeded: RenderSpineResult[] = [];

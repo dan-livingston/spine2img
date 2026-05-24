@@ -12,6 +12,11 @@ function parseOutputFormat(value: string): "apng" | "webp" {
 	throw new InvalidArgumentError(`format must be "apng" or "webp". Received ${value}.`);
 }
 
+// Accumulates a repeatable `--skin` flag into an array.
+function collectSkin(value: string, previous: string[]): string[] {
+	return [...previous, value];
+}
+
 export function createCli(): Command {
 	const program = new Command();
 
@@ -75,13 +80,19 @@ export function createCli(): Command {
 		.addCommand(
 			new Command("render-all")
 				.description(
-					"Render every animation of a Spine skeleton's default skin to a directory.",
+					"Render every animation across a Spine skeleton's skins to a directory.",
 				)
 				.argument("<skeleton>", "path to the Spine JSON skeleton")
 				.argument("<outDir>", "directory for the rendered image files")
 				.option(
 					"--atlas <atlas>",
 					"path to the Spine atlas (defaults beside the skeleton; relative paths resolve from the current directory)",
+				)
+				.option(
+					"--skin <skin>",
+					"render only this skin (repeatable); defaults to every named skin",
+					collectSkin,
+					[],
 				)
 				.option(
 					"--background <color>",
@@ -95,6 +106,7 @@ export function createCli(): Command {
 						atlasPath: options.atlas,
 						backgroundColor: options.background,
 						fps: options.fps,
+						skinNames: options.skin,
 						onProgress: (variation) => {
 							console.log(
 								`Rendered ${formatVariationLabel(variation)} to ${variation.outputPath} (${variation.width}x${variation.height}, ${variation.frameCount} frames @ ${variation.fps} fps).`,
