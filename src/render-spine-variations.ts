@@ -14,7 +14,7 @@ import { renderVariation } from "#/lib/render-variation.ts";
 import { resolveAnimatedImageEncoder } from "#/lib/resolve-animated-image-encoder.ts";
 import { resolveBatchFormat } from "#/lib/resolve-batch-format.ts";
 import { resolveEncodeOptions } from "#/lib/resolve-encode-options.ts";
-import { INFINITE_LOOP } from "#/lib/resolve-loop.ts";
+import { resolveLoop } from "#/lib/resolve-loop.ts";
 import { resolveSpineInputs } from "#/lib/resolve-spine-inputs.ts";
 import { validateExplicitDimension } from "#/lib/validate-dimension.ts";
 import { writeOutputFile } from "#/lib/write-output-file.ts";
@@ -34,6 +34,11 @@ export interface RenderSpineVariationsOptions {
 	// Forces the canvas height uniformly across every output. Overrides both the
 	// registered canvas and `--tight` auto-fit.
 	height?: number;
+	// One loop count applied to every variation in the run: `0` = infinite
+	// (default), `1` = play once, `N` = N plays. A scalar uniformly — per-animation
+	// patterns land in a later slice. Resolved through the same validator as single
+	// render, so a bad count aborts the whole run up front.
+	loop?: number;
 	// Lossy WebP opt-out/quality, applied uniformly to every variation. `lossless:
 	// false` or a `quality` on a non-WebP run is rejected with the same typed
 	// validation error as single-render.
@@ -140,6 +145,9 @@ export async function runSpineVariations<THandle>(
 		quality: options.quality,
 	});
 	const encoder = resolveAnimatedImageEncoder(format);
+	// One scalar count for the whole run, validated up front alongside the encode
+	// options so a bad `--loop` aborts before any file is written.
+	const loop = resolveLoop(options.loop);
 	const inputs = resolveSpineInputs({
 		atlasPath: options.atlasPath,
 		skeletonPath: options.skeletonPath,
@@ -251,9 +259,9 @@ export async function runSpineVariations<THandle>(
 						format,
 						fps,
 						height,
-						// Batch loop policy lands in a later slice; until then every
-						// variation keeps the historical infinite-loop default.
-						loop: INFINITE_LOOP,
+						// One run-wide count applied to every variation; per-animation
+						// patterns land in a later slice.
+						loop,
 						outputPath: planned.outputPath,
 						resolved: planned.resolved,
 						skeletonPath: inputs.skeletonPath,

@@ -1,10 +1,12 @@
 import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { expect, test } from "vite-plus/test";
+import { describe, expect, test } from "vite-plus/test";
 
 import {
+	animatedFormatCases,
 	decodeApng,
+	decodeLoop,
 	decodeWebpFrames,
 	importPackageApi,
 	renderAllFixtureSkeletonPath,
@@ -318,6 +320,87 @@ test("packed package API rejects lossy encoding on an APNG batch", async () => {
 		});
 
 		// The invalid combination is rejected before any work, so nothing is written.
+		let listing: string[] | undefined;
+		try {
+			listing = await readdir(outputDir);
+		} catch {
+			listing = undefined;
+		}
+		expect(listing).toBeUndefined();
+	} finally {
+		await rm(tempDirectory, { force: true, recursive: true });
+	}
+});
+
+describe.each(animatedFormatCases)(
+	"packed package API render-all embeds a uniform loop count for $format output",
+	({ format }) => {
+		test("--loop applies to every file; omitting it stays infinite", async () => {
+			const tempDirectory = await mkdtemp(
+				path.join(os.tmpdir(), `spine2img-api-render-all-loop-${format}-`),
+			);
+
+			try {
+				const packageApi = await importPackageApi();
+				const playOnce = await packageApi.renderSpineVariations({
+					format,
+					loop: 1,
+					outputDir: path.join(tempDirectory, "play-once"),
+					skeletonPath: renderAllFixtureSkeletonPath,
+					skinNames: ["alt"],
+				});
+				// Omitting `loop` keeps the historical infinite-loop default, unchanged.
+				const infinite = await packageApi.renderSpineVariations({
+					format,
+					outputDir: path.join(tempDirectory, "infinite"),
+					skeletonPath: renderAllFixtureSkeletonPath,
+					skinNames: ["alt"],
+				});
+
+				// The resolved count surfaces on every entry...
+				expect(playOnce.succeeded).toHaveLength(3);
+				expect(playOnce.succeeded.every((entry) => entry.loop === 1)).toBe(true);
+				expect(infinite.succeeded.every((entry) => entry.loop === 0)).toBe(true);
+
+				// ...and every file on disk decodes to it, across the whole batch.
+				for (const entry of playOnce.succeeded) {
+					expect(await decodeLoop(await readFile(entry.outputPath), format)).toBe(1);
+				}
+				for (const entry of infinite.succeeded) {
+					expect(await decodeLoop(await readFile(entry.outputPath), format)).toBe(0);
+				}
+			} finally {
+				await rm(tempDirectory, { force: true, recursive: true });
+			}
+		});
+	},
+);
+
+test("packed package API render-all rejects an invalid loop count before writing", async () => {
+	const tempDirectory = await mkdtemp(
+		path.join(os.tmpdir(), "spine2img-api-render-all-bad-loop-"),
+	);
+
+	try {
+		const outputDir = path.join(tempDirectory, "out");
+		const packageApi = await importPackageApi();
+
+		let error: unknown;
+
+		try {
+			await packageApi.renderSpineVariations({
+				loop: 1.5,
+				outputDir,
+				skeletonPath: renderAllFixtureSkeletonPath,
+			});
+		} catch (caught) {
+			error = caught;
+		}
+
+		expect(error).toBeInstanceOf(packageApi.RenderOptionValidationError);
+		expect(error).toMatchObject({ code: "invalid-loop" });
+
+		// Fail-fast: the invalid count is rejected before any work, so nothing is written.
 		let listing: string[] | undefined;
 		try {
 			listing = await readdir(outputDir);

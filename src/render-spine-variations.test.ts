@@ -112,6 +112,50 @@ test("runSpineVariations collects a single render failure and keeps rendering th
 	}
 });
 
+test("runSpineVariations resolves one loop count and applies it to every variation", async () => {
+	const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-unit-loop-"));
+
+	try {
+		const outputDir = path.join(tempDirectory, "out");
+		const result = await runSpineVariations(
+			createFakeBackend({
+				animationNames: ["idle", "press"],
+				skinNames: ["a", "b"],
+			}),
+			{ loop: 2, outputDir, skeletonPath: "/fake/skeleton.json" },
+		);
+
+		// The scalar is resolved once and surfaces on every entry the same way single
+		// render reports it — across both skins, not just one.
+		expect(result.failed).toEqual([]);
+		expect(result.succeeded).toHaveLength(4);
+		expect(result.succeeded.every((entry) => entry.loop === 2)).toBe(true);
+	} finally {
+		await rm(tempDirectory, { force: true, recursive: true });
+	}
+});
+
+test("runSpineVariations rejects an invalid loop count before any backend work", async () => {
+	const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-unit-bad-loop-"));
+
+	try {
+		const outputDir = path.join(tempDirectory, "out");
+
+		await expect(
+			runSpineVariations(createFakeBackend({ animationNames: ["idle"], skinNames: [] }), {
+				loop: -1,
+				outputDir,
+				skeletonPath: "/fake/skeleton.json",
+			}),
+		).rejects.toMatchObject({ code: "invalid-loop" });
+
+		// Fail-fast: the output directory was never created.
+		await expect(readdir(outputDir)).rejects.toThrow();
+	} finally {
+		await rm(tempDirectory, { force: true, recursive: true });
+	}
+});
+
 test("runSpineVariations isolates a skin's measure failure to that skin", async () => {
 	const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-unit-measure-"));
 

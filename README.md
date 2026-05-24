@@ -124,6 +124,8 @@ spine2img render fixtures/tracer-bullet/box.json out/press.webp --loop 1
 
 `loop` is the one knob for both seamless loops and one-shots: leave it at the `0` default for a seamless idle/hover that returns to its start pose, and set `1` for a one-shot whose end pose differs from its start so it does not visibly snap back on every cycle. An invalid count (negative, fractional, `NaN`, or `Infinity`) is rejected up front with a typed `RenderOptionValidationError`. For a single-frame animation the option is inert — there is nothing to loop, so a still image is written unchanged.
 
+Batch rendering takes the same scalar: `--loop` (CLI) / `loop` (library) on `render-all` applies one count to **every** variation in the run, reported back on each `succeeded` entry. (Per-animation loop patterns are a separate feature — see [batch rendering](#batch-rendering).)
+
 ## Batch rendering
 
 A single render handles one animation. To export every state of a skeleton at once — for example all of a UI button's idle/hover/press animations across its skins — use the `renderSpineVariations` library function or the `spine2img render-all` CLI subcommand. Both render the full cross-product of **all animations × all skins** in one invocation, loading the skeleton, atlas, and textures once and rendering strictly sequentially to keep memory bounded.
@@ -207,7 +209,7 @@ spine2img render-all fixtures/render-all/button.json out/button \
   --tight
 ```
 
-The shared options — `--fps`, `--background`, `--width`/`--height`, `--format`, `--no-lossless`, `--quality`, and `--overwrite` — all apply uniformly to every variation in the run.
+The shared options — `--fps`, `--background`, `--width`/`--height`, `--format`, `--loop` (one loop count for every file, default `0` = infinite; see [looping](#looping)), `--no-lossless`, `--quality`, and `--overwrite` — all apply uniformly to every variation in the run.
 
 ### Failure model and exit codes
 

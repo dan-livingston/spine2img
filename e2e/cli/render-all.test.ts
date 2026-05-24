@@ -3,7 +3,13 @@ import os from "node:os";
 import path from "node:path";
 import { expect, test } from "vite-plus/test";
 
-import { decodeApng, decodeWebpFrames, renderAllFixtureSkeletonPath, runCli } from "../helpers.ts";
+import {
+	decodeApng,
+	decodeApngLoop,
+	decodeWebpFrames,
+	renderAllFixtureSkeletonPath,
+	runCli,
+} from "../helpers.ts";
 
 test("packed package CLI render-all renders the cross-product across named skins", async () => {
 	const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-cli-render-all-"));
@@ -136,6 +142,73 @@ test("packed package CLI render-all --format webp writes WebP files", async () =
 		expect(idle.format).toBe("webp");
 		expect(idle.frames).toHaveLength(30);
 		expect(stdout).toContain("Rendered 3 variations");
+	} finally {
+		await rm(tempDirectory, { force: true, recursive: true });
+	}
+});
+
+test("packed package CLI render-all --loop embeds the count in every file", async () => {
+	const tempDirectory = await mkdtemp(path.join(os.tmpdir(), "spine2img-cli-render-all-loop-"));
+
+	try {
+		const outputDir = path.join(tempDirectory, "out");
+		const { stdout } = await runCli([
+			"render-all",
+			renderAllFixtureSkeletonPath,
+			outputDir,
+			"--skin",
+			"alt",
+			"--loop",
+			"1",
+			"--json",
+		]);
+		const result = JSON.parse(stdout) as {
+			succeeded: { loop: number; outputPath: string }[];
+		};
+
+		// Every entry in the summary reports the resolved count...
+		expect(result.succeeded).toHaveLength(3);
+		expect(result.succeeded.every((entry) => entry.loop === 1)).toBe(true);
+
+		// ...and every written file decodes to it.
+		for (const entry of result.succeeded) {
+			expect(decodeApngLoop(await readFile(entry.outputPath))).toBe(1);
+		}
+	} finally {
+		await rm(tempDirectory, { force: true, recursive: true });
+	}
+});
+
+test("packed package CLI render-all rejects an invalid --loop up front", async () => {
+	const tempDirectory = await mkdtemp(
+		path.join(os.tmpdir(), "spine2img-cli-render-all-bad-loop-"),
+	);
+
+	try {
+		const outputDir = path.join(tempDirectory, "out");
+
+		let error: unknown;
+
+		try {
+			await runCli(["render-all", renderAllFixtureSkeletonPath, outputDir, "--loop", "1.5"]);
+		} catch (caught) {
+			error = caught;
+		}
+
+		expect(error).toBeInstanceOf(Error);
+		expect((error as { code?: number }).code).not.toBe(0);
+		expect((error as { stderr?: string }).stderr).toContain(
+			"loop must be a non-negative integer.",
+		);
+
+		// Fail-fast: nothing was rendered, so the output directory was never created.
+		let listing: string[] | undefined;
+		try {
+			listing = await readdir(outputDir);
+		} catch {
+			listing = undefined;
+		}
+		expect(listing).toBeUndefined();
 	} finally {
 		await rm(tempDirectory, { force: true, recursive: true });
 	}
